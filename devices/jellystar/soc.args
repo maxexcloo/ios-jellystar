@@ -1,0 +1,75 @@
+# devices/jellystar/soc.args: SoC addresses for the Unihertz Jelly Star, each one read out of the phone's own
+# device tree (vendor_boot v4 DTB + dtbo overlay), not from a vendor source drop. The convention and the
+# `tools/soc-args.py --check` consumer come from the redfin port; here the checker is `tools/check-facts.py`.
+#
+# Format: KEY=VALUE  # the DT node it came from
+# `python3 tools/check-facts.py` re-reads fw/jellystar.dtb + fw/dtbo.img and fails if any value below drifts.
+
+# --- CPU / interrupt controller / timer -------------------------------------------------------------------
+# arm,gic-v3: GICD 0x0c000000+0x40000, GICR 0x0c040000+0x200000 (one redistributor region)
+soc_gicd=0x0c000000                          # /interrupt-controller reg[0]
+soc_gicd_size=0x40000                        # /interrupt-controller reg[1]
+soc_gicr=0x0c040000                          # /interrupt-controller reg[2]
+soc_gicr_size=0x200000                       # /interrupt-controller reg[3]
+soc_timebase=13000000                        # /timer clock-frequency 0xc65d40
+soc_vtimer_intid=27                          # /timer interrupts <1 11 4 ...> -> 16 + PPI 11
+# 6x Cortex-A55 at MPIDR 0x000,0x100..0x500 and 2x Cortex-A76 at 0x600,0x700 -- same topology as the X676C
+# port, which publishes only the six A55s. A76s stay excluded until AMP is supported.
+soc_cpu_mpidr=0x000,0x100,0x200,0x300,0x400,0x500,0x600,0x700   # /cpus/cpu@NNN reg
+
+# --- storage ----------------------------------------------------------------------------------------------
+# mediatek,mt8183-ufshci, SPI 137. Resets live in infracfg_ao (ti,syscon-reset).
+soc_ufs=0x11270000                           # /soc/ufshci@11270000 reg[0] size 0x2300
+soc_ufs_size=0x2300
+soc_ufs_spi=137                              # /soc/ufshci@11270000 interrupts <0 0x89 4>
+soc_infracfg_ao=0x10001000                   # /syscon@10001000, reset-controller parent
+
+# --- clocks / PMIC / reset / GPIO -------------------------------------------------------------------------
+soc_topckgen=0x10000000                      # /syscon@10000000 (mediatek,mt6789-topckgen)
+soc_apmixedsys=0x1000c000                    # /syscon@1000C000
+soc_scpsys=0x10006000                        # /power-controller@10006000 (mediatek,mt6789-scpsys)
+soc_gpio=0x10005000                          # /soc/gpio@10005000   (pio, phandle &pio)
+soc_pwrap=0x10026000                         # /soc/pwrap@10026000  (mediatek,mt6789-pwrap -> MT6366)
+soc_toprgu=0x10007000                        # /soc/watchdog@10007000; restart at +0x08, key 0x1971
+soc_keypad=0x10010000                        # /soc/kp@10010000     (mediatek,kp volume keys, SPI 106)
+soc_disp_pwm=0x1100e000                      # /soc/disp_pwm0@1100e000 (backlight)
+soc_mfg_top_config=0x13fbf000                # /soc/gpufreq reg-names[0] mfg_top_config
+
+# --- display ----------------------------------------------------------------------------------------------
+# Command-mode DSI. The base DTB describes a *sibling* panel (chosen lcmname nt36672e_fhdp..., i.e. 1080x2400);
+# the fitted Jelly Star panel is selected by the dtbo overlay. See docs/jellystar/port-plan.md "Panel".
+soc_dsi0=0x14013000                          # /soc/dsi@14013000   (SPI 301)
+soc_dsi0_spi=301                             # interrupts <0 0x12d 4>
+soc_disp_mutex0=0x14001000                   # /soc/disp_mutex@14001000 (SPI 285)
+soc_ovl0=0x1400a000                          # /soc/disp_ovl0@1400a000
+soc_mmsys_config=0x14000000                  # /soc/disp_mmsys@14000000
+panel_width=480                              # dtbo fragment@13 panel geometry (Lineage tree + STATUS.md)
+panel_height=854
+panel_density=220
+# LK's visible framebuffer, from the *base* DTB's chosen node. Treat as suspect until read on the device:
+# atag,videolfb-vramSize is 0x01be0000 (~29 MiB), which fits 3x 1080x2400 buffers, not one 480x854 buffer.
+soc_fb=0x7e605000                            # /chosen atag,videolfb-fb_base_l
+soc_fb_vramsize=0x01be0000                   # /chosen atag,videolfb-vramSize
+soc_fb_lcmname=nt36672e_fhdp_dsi_vdo_60hz_jdi_dphy_drv   # /chosen (sibling panel, see above)
+
+# --- GPU --------------------------------------------------------------------------------------------------
+# arm,mali-valhall / Mali-G57 MC2. Five SPIs: GPU 396, MMU 397, JOB 398, EVENT 399, PWR 400.
+soc_gpu=0x13000000                           # /soc/mali@13000000 reg[0] size 0x4000
+soc_gpu_size=0x4000
+soc_gpu_spis=396,397,398,399,400             # /soc/mali@13000000 interrupts
+
+# --- USB (debug path: MUSB host/device, not Qualcomm DWC3) -------------------------------------------------
+soc_usb=0x11200000                            # /soc/usb0@11200000 (mediatek,mt6789-usb20) SPI 128
+soc_usb_phy=0x11f40000                        # /soc/usb-phy@11f40000 (T-PHY, second reg of usb0)
+
+# --- touch (the part that does not transfer from any existing port) ---------------------------------------
+# Chipsea chsc5xxx behind mediatek,cap_touch (the vendor's Android driver is chsc5xxx_touch.ko).
+soc_touch_i2c=0x11e00000                     # dtbo fragment@34 target: /soc/i2c@11e00000 (mediatek,mt6983-i2c)
+soc_touch_addr=0x2e                          # cap_touch@38 reg
+soc_touch_hz=400000                          # fragment@34 clock-frequency 0x61a80
+soc_touch_irq_gpio=9                         # chipsemi,int-gpio
+soc_touch_rst_gpio=152                       # chipsemi,rst-gpio 0x98
+soc_touch_irq_type=2                         # interrupts <9 2 9 0>
+soc_touch_xres=480                           # tpd-resolution 0x1e0
+soc_touch_yres=854                           # tpd-resolution 0x356
+soc_touch_max=10                             # tpd-max-touch-num
