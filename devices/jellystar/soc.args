@@ -17,6 +17,33 @@ soc_vtimer_intid=27                          # /timer interrupts <1 11 4 ...> ->
 # port, which publishes only the six A55s. A76s stay excluded until AMP is supported.
 soc_cpu_mpidr=0x000,0x100,0x200,0x300,0x400,0x500,0x600,0x700   # /cpus/cpu@NNN reg
 
+# --- DRAM (VERIFIED ON THE PHONE) -------------------------------------------------------------------------
+# /proc/device-tree/memory/reg = <0x40000000 0x20000000> -- one 512 MiB window starting at 1 GiB. That is
+# LK's own view and useless for XNU (it is *below* the 4 GiB firmware carve-outs, and the phone has 8 GiB).
+# The actual usable map comes from the reserved-memory nodes: rank 1 ends at 0x23ffff000, exactly as on the
+# X676C port. MemTotal 7,960,428 kB = 7.59 GiB agrees with two 4 GiB ranks minus carve-outs.
+# HelioDarwin's window (0x140000000 + 0xffff0000) is therefore almost certainly right here too, but it is a
+# claim until the shim prints it: LK passes the *live* DTB at boot, and that is what loader.c parses.
+soc_dram_rank0_end=0x13ffff000               # reserved-memory/mblock-1-dramc-rk0 (phone)
+soc_dram_rank1_end=0x23ffff000               # reserved-memory/mblock-2-dramc-rk1 (phone)
+soc_dram_kernel_base=0x140000000             # INFERRED: between the two dramc training pages (verify in shim)
+soc_dram_kernel_size=0xffff0000              # INFERRED: rank1_end - kernel_base (verify in shim)
+
+# --- storage / partition geometry (VERIFIED ON THE PHONE, /proc/partitions) ---------------------------------
+# UFS LUN sdc, 512-byte logical sectors. 8 MiB vbmeta is odd for a real device (the release's vbmeta.img is
+# 8192 bytes) -- verify before assuming anything about that partition's contents.
+# userdata is 239,034,336 sectors = 228.0 GiB, so an iosroot carve has plenty of room; super is 9,437,184
+# sectors = 9.0 GiB and holds a *GApps GSI* system on this unit, with the stock vendor (verify: the GSI
+# fingerprint is lineage_arm64_bgN, but vendor/vbmeta are stock).
+soc_lun=sdc
+soc_sector=512
+part_userdata_sectors=239034336              # /proc/partitions sdc60 size = 228.0 GiB
+part_super_sectors=9437184                   # sdc59 = 9.0 GiB
+part_boot_bytes=67108864                     # boot_a/boot_b: 64 MiB each, header v4
+part_dtbo_bytes=8388608                      # dtbo_a/dtbo_b
+part_vbmeta_bytes=8388608                    # vbmeta_a/b -- suspiciously large, verify
+part_metadata_bytes=33554432                 # metadata
+
 # --- storage ----------------------------------------------------------------------------------------------
 # mediatek,mt8183-ufshci, SPI 137. Resets live in infracfg_ao (ti,syscon-reset).
 soc_ufs=0x11270000                           # /soc/ufshci@11270000 reg[0] size 0x2300
@@ -43,14 +70,27 @@ soc_dsi0_spi=301                             # interrupts <0 0x12d 4>
 soc_disp_mutex0=0x14001000                   # /soc/disp_mutex@14001000 (SPI 285)
 soc_ovl0=0x1400a000                          # /soc/disp_ovl0@1400a000
 soc_mmsys_config=0x14000000                  # /soc/disp_mmsys@14000000
-panel_width=480                              # dtbo fragment@13 panel geometry (Lineage tree + STATUS.md)
+# VERIFIED ON THE PHONE 2026-11-06 (rooted Android 13 GSI on the Jelly Star):
+#   /sys/class/drm/card0-DSI-1/modes = 480x854, SurfaceFlinger 480x854 @ 60.00 Hz, wm density 220
+#   the fitted panel driver is panel_ST7701S_Z30043 -> the dtbo's zhunyi,st7701,vdo candidate, VIDEO mode
+panel_width=480                              # DRM mode + SurfaceFlinger (phone)
 panel_height=854
-panel_density=220
+panel_density=220                            # wm density (phone)
+panel_driver=panel_ST7701S_Z30043            # lsmod (phone); NOT the TD4330 cmd-mode candidate
+panel_mode=vdo                               # video mode: the DSI keeps scanning out, no kick needed
 # LK's visible framebuffer, from the *base* DTB's chosen node. Treat as suspect until read on the device:
 # atag,videolfb-vramSize is 0x01be0000 (~29 MiB), which fits 3x 1080x2400 buffers, not one 480x854 buffer.
-soc_fb=0x7e605000                            # /chosen atag,videolfb-fb_base_l
-soc_fb_vramsize=0x01be0000                   # /chosen atag,videolfb-vramSize
-soc_fb_lcmname=nt36672e_fhdp_dsi_vdo_60hz_jdi_dphy_drv   # /chosen (sibling panel, see above)
+# VERIFIED ON THE PHONE: /chosen says 0xffb0c000 / 0x4c0000, and the reserved-memory node
+# mblock-13-framebuffer is 0xffb0c000 + 0x4f3000 -- two different sizes for the same base. The
+# reserved-memory one is the carve-out (19,472 bytes more than /chosen advertises); use it and
+# bounds-check writes. The *static* Lineage DT said 0x7e605000 / 0x1be0000, i.e. the DTB in the
+# release image is not the one LK passes to the kernel. Never trust the packaged DTB for the FB.
+soc_fb=0xffb0c000                            # /chosen atag,videolfb-fb_base_l (phone)
+soc_fb_vramsize=0x4c0000                     # /chosen atag,videolfb-vramSize (phone)
+soc_fb_reserved=0x4f3000                     # reserved-memory/mblock-13-framebuffer reg[1] (phone)
+# /chosen still names the shared-family panel string. It is WRONG: the panel actually fitted is the
+# ST7701S. Proves the chosen lcmname cannot be used to pick a panel driver.
+soc_fb_lcmname=nt36672e_fhdp_dsi_vdo_60hz_jdi_dphy_drv   # /chosen -- misleading, see panel_driver
 
 # --- GPU --------------------------------------------------------------------------------------------------
 # arm,mali-valhall / Mali-G57 MC2. Five SPIs: GPU 396, MMU 397, JOB 398, EVENT 399, PWR 400.
@@ -62,10 +102,18 @@ soc_gpu_spis=396,397,398,399,400             # /soc/mali@13000000 interrupts
 soc_usb=0x11200000                            # /soc/usb0@11200000 (mediatek,mt6789-usb20) SPI 128
 soc_usb_phy=0x11f40000                        # /soc/usb-phy@11f40000 (T-PHY, second reg of usb0)
 
+# --- pstore / ramoops (VERIFIED: identical base to the X676C port) -----------------------------------------
+soc_pstore=0x48090000                        # reserved-memory/mblock-10-pstore reg[0]
+soc_pstore_size=0xe0000                      # reserved-memory/mblock-10-pstore reg[1]
+soc_aee_kinfo=0x48080000                     # reserved-memory/mblock-9-aee_debug_kinfo
+soc_minirdump=0x48170000                     # reserved-memory/mblock-11-minirdump
+
 # --- touch (the part that does not transfer from any existing port) ---------------------------------------
 # Chipsea chsc5xxx behind mediatek,cap_touch (the vendor's Android driver is chsc5xxx_touch.ko).
 soc_touch_i2c=0x11e00000                     # dtbo fragment@34 target: /soc/i2c@11e00000 (mediatek,mt6983-i2c)
-soc_touch_addr=0x2e                          # cap_touch@38 reg
+soc_touch_addr=0x2e                          # cap_touch@38 reg; VERIFIED /sys/bus/i2c/devices/0-002e
+soc_touch_driver=chsc5xxx_touch              # lsmod; input name "cap_touch" at 11e00000.i2c/i2c-0/0-002e
+soc_touch_input=event2                       # /proc/bus/input/devices
 soc_touch_hz=400000                          # fragment@34 clock-frequency 0x61a80
 soc_touch_irq_gpio=9                         # chipsemi,int-gpio
 soc_touch_rst_gpio=152                       # chipsemi,rst-gpio 0x98

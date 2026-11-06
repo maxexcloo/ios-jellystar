@@ -115,12 +115,40 @@ RULES = {
 # Facts asserted by the plan that are simply not in the device tree. Printed
 # with the reason so nobody mistakes them for verified.
 NOT_IN_DT = {
-    "panel_width": "Android-side fact (Lineage tree, STATUS.md)",
-    "panel_height": "Android-side fact (Lineage tree, STATUS.md)",
-    "panel_density": "ro.sf.lcd_density 220",
-    "soc_fb_lcmname": "/chosen claims a *sibling* panel; verify on the phone",
+    "panel_width": "verified on the phone: DRM mode 480x854",
+    "panel_height": "verified on the phone: DRM mode 480x854",
+    "panel_density": "verified on the phone: wm density 220",
+    "panel_driver": "verified on the phone: lsmod panel_ST7701S_Z30043",
+    "panel_mode": "verified on the phone: lsmod vdo panel",
+    "soc_fb_lcmname": "the packaged DTB's value is WRONG for this phone (see panel_driver)",
+    "soc_touch_driver": "verified on the phone: lsmod chsc5xxx_touch",
+    "soc_touch_input": "verified on the phone: /proc/bus/input/devices event2",
+    "soc_dram_kernel_base": "INFERRED between the two dramc pages; verify in the shim",
+    "soc_dram_kernel_size": "INFERRED between the two dramc pages; verify in the shim",
     "soc_mmsys_config": "not present in this DTB",
     "soc_ovl0": "not present in this DTB",
+
+    # LK adds these reserved-memory nodes to the live DTB at boot; the packaged
+    # DTB from the release image has none of them. Phone values only.
+    "soc_fb_reserved": "phone: reserved-memory/mblock-13-framebuffer (LK adds it)",
+    "soc_pstore": "phone: reserved-memory/mblock-10-pstore (LK adds it)",
+    "soc_pstore_size": "phone: reserved-memory/mblock-10-pstore (LK adds it)",
+    "soc_aee_kinfo": "phone: reserved-memory/mblock-9-aee_debug_kinfo (LK adds it)",
+    "soc_minirdump": "phone: reserved-memory/mblock-11-minirdump (LK adds it)",
+    "soc_dram_rank0_end": "phone: reserved-memory/mblock-1-dramc-rk0 (LK adds it)",
+    "soc_dram_rank1_end": "phone: reserved-memory/mblock-2-dramc-rk1 (LK adds it)",
+}
+
+# Facts whose value was read off the *running phone* and which the packaged DTB
+# in the release/firmware image contradicts. These are reported, not corrected:
+# seeing the divergence is the point. A new entry here needs a reason and a date.
+KNOWN_DIVERGENCE = {
+    "soc_fb":
+        "phone 2026-11-06: /chosen says 0xffb0c000; the packaged DTB says 0x7e605000. LK passes its "
+        "own DTB at boot, so the packaged one is not authoritative.",
+    "soc_fb_vramsize":
+        "phone 2026-11-06: /chosen says 0x4c0000; the packaged DTB says 0x1be0000 (sized for a "
+        "1080x2400 panel). The phone has 480x854.",
 }
 
 
@@ -193,6 +221,7 @@ def main(argv):
     trees = load(args.fw)
     facts = parse_conf(args.conf)
     bad = skipped = 0
+    diverged = []
 
     for key in sorted(facts):
         expected = facts[key]
@@ -225,7 +254,12 @@ def main(argv):
         if kind == "intid":
             # The timer has four PPIs <13 14 11 10>; keep only the one asked for.
             got = [x for x in got if x in want]
-        if got != want:
+        if got != want and key in KNOWN_DIVERGENCE:
+            print("%-22s PHONE   conf=%s dt=%s  (%s)" % (
+                key, ",".join(hex(x) for x in want), ",".join(hex(x) for x in got),
+                KNOWN_DIVERGENCE[key]))
+            diverged.append(key)
+        elif got != want:
             print(
                 "%-22s MISMATCH dt=%s conf=%s"
                 % (key, ",".join(hex(x) for x in got), ",".join(hex(x) for x in want))

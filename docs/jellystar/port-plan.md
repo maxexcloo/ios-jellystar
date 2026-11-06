@@ -52,26 +52,30 @@ in hand) and *Android* (they come from the Lineage tree, not the DT).
 | Volume keys | `kp@10010000`, SPI 106 | same | ✅ |
 | Power key | MT6366 `keys/power` = code 116, `keys/func2` = code 250; **red shortcut key = keypad scan code 249** (Lineage `mtk-kpd.kl`) | same PMIC, no func2 | ✅ |
 | Touch | **Chipsea `chsc5xxx`**, i2c0 `11e00000` @ **0x2e**, 400 kHz, IRQ GPIO 9 (type 2), reset GPIO 152, 10 touches, 480×854 | FocalTech FT5452J @ 0x38 | ❌ new driver |
-| Panel | ST7701S (`vdo`) **or** TD4330 (`cmd`), 480×854 | ili7835 1080×2400 cmd | ❌ new driver |
-| LK framebuffer | `/chosen/atag,videolfb-fb_base_l` = **`0x7e605000`**, vram 0x01be0000 (~29 MiB) | `0xfeabe000` | ⚠ phone |
-| DRAM window | base DT says `0x40000000`+1 GiB — **stale, ignore** | rank-1 `0x140000000` | ⚠ phone |
+| Panel | **ST7701S (`panel_ST7701S_Z30043`), video mode, 480×854 @ 60 Hz** — verified | ili7835 1080×2400 cmd | ❌ new driver |
+| LK framebuffer | `/chosen` = **`0xffb0c000`**, vram 0x4c0000; carve-out `mblock-13-framebuffer` = `0xffb0c000`+0x4f3000 — verified | `0xfeabe000` | ⚠ sizes disagree |
+| DRAM window | `mblock-1-dramc-rk0` = `0x13ffff000`, `mblock-2-dramc-rk1` = `0x23ffff000` — verified | rank-1 `0x140000000`+0xffff0000 | ⚠ inferred |
+| pstore | `mblock-10-pstore` = `0x48090000`+0xe0000 — verified, **identical to X676C** | `0x48090000`+0xe0000 | ✅ |
 | Boot slot | virtual A/B; `boot`, `vendor_boot`, `dtbo`, `vbmeta` are slotted; recovery inside `vendor_boot` | `boot_a` via rooted Android | different |
 
-### Three facts that decide the work
+### The recon questions are answered (2026-11-06)
 
-**1. The panel in the DT is not the panel on the phone.** The base DTB's `/chosen/atag,videolfb-lcmname`
-says `nt36672e_fhdp_dsi_vdo_60hz_jdi_dphy_drv` — a 1080×2400 Novatek panel that cannot be fitted to a
-3-inch 480×854 phone, and `vramSize` 0x01be0000 (~29 MiB) is sized for 1080×2400 buffers. The base tree
-is shared across a family of MT6789 boards. The **overlay** then adds two panels to `dsi0` at once:
-`zhunyi,st7701,vdo` (fragment@13 panel1) and `truly,td4330,cmd` (panel2), and the vendor ramdisk ships
-panel modules for both plus six other panels (`panel-ST7701S_Z30043.ko`,
-`panel-truly-td4330-cmd.ko`, NT37801, S68FC01, Tianma R66451, ...). The Lineage tree's own `kernel/README.md`
-says outright: *"only one panel driver is actually relevant to Jelly Star specifically, not yet
-identified which."*
+The phone was read directly (rooted Android 13 GSI, `adb root`). Every "phone" row above is now measured,
+not inferred. `/proc/device-tree` needs root; as `shell` it is `EACCES`.
+
+**1. Panel: ST7701S, video mode. Settled, and `/chosen` lies.** `lsmod` shows
+`panel_ST7701S_Z30043` bound (`mtk_panel_ext` in use by it), which is the overlay's
+`zhunyi,st7701,vdo` candidate — *not* the TD4330 command-mode one. DRM reports
+`card0-DSI-1/modes = 480x854` and SurfaceFlinger `480x854 @ 60.00 Hz`.
+
+Yet `/chosen/atag,videolfb-lcmname` still says `nt36672e_fhdp_dsi_vdo_60hz_jdi_dphy_drv`, a 1080×2400
+Novatek part. **So the chosen lcmname cannot be used to pick a panel driver on this phone** — a trap that
+would have cost a wasted driver, since the packaged DTB and the live one disagree. Video mode also means
+the DSI scans out continuously and needs no per-frame kick, unlike HelioDarwin's command-mode ili7835.
 → **The first task is `adb shell cat /proc/device-tree/chosen/atag,videolfb-lcmname` on a running phone
 (or `dmesg | grep -i lcm`), not writing a driver.** Getting this wrong means writing two.
 
-**2. Touch is a Chipsea part nobody has written an XNU driver for.** Both existing MT6789 ports drive
+**2. Touch is a Chipsea part nobody has written an XNU driver for — confirmed.** Both existing MT6789 ports drive
 FocalTech (`FT5452J`, `FTS3519`). The Jelly Star's `cap_touch@38` is `chipsemi` — Chipsea — and the vendor's
 own Android driver is `chsc5xxx_touch.ko` in the vendor ramdisk. Note also `reg = 0x2e` (not 0x38), IRQ
 GPIO 9, reset GPIO 152, and `use-tpd-button` with three capacitive keys mapped through `tpd-key-local`
@@ -79,12 +83,29 @@ GPIO 9, reset GPIO 152, and `use-tpd-button` with three capacitive keys mapped t
 register reads under Android's `dmesg` with the vendor driver loaded) — this is the single largest piece
 of unknown work in the port.
 
-Watch out for two decoys in the base DTB: `/touch_panel` says `compatible = "goodix,touch"` and `/touch`
-says `mediatek,touch`. Neither has a `reg`, an interrupt or a bus — they are header stubs that the MediaTek
-touch glue uses to carry phandles. They are **not** the fitted controller, and a
-Goodix driver would be wasted work.
+Confirmed on the phone: `lsmod` has `chsc5xxx_touch`, `/sys/bus/i2c/devices/0-002e/name` is `cap_touch`,
+and `/proc/bus/input/devices` shows `cap_touch` at `11e00000.i2c/i2c-0/0-002e` as `event2`. The vendor
+driver prints `[CHSC]` lines (e.g. `semi_touch_suspend_entry`), which is the string to grep when recovering
+its protocol from the `.ko`.
 
-**3. 480×854 is not a phone-shaped screen for iOS.** iOS assumes an iPhone. HelioDarwin handles this the
+Two decoys in the base DTB, ignore both: `/touch_panel` says `compatible = "goodix,touch"` and `/touch`
+says `mediatek,touch`. Neither has a `reg`, an interrupt or a bus — they are header stubs carrying phandles.
+A Goodix driver would be wasted work.
+
+**3. The framebuffer base differs from the packaged DTB, and two sizes disagree.** The phone says
+`/chosen` = `0xffb0c000`, vram `0x4c0000` (4.75 MiB); reserved-memory `mblock-13-framebuffer` says the same
+base but `0x4f3000` (19,472 bytes more). The packaged Lineage DTB says `0x7e605000`/`0x1be0000` — i.e. that
+DTB is *not* the one LK boots with. `readelf` cannot help here: the shim must read the live DTB (as
+HelioDarwin's `loader.c` already does) and bounds-check writes against the reserved size.
+
+**4. DRAM looks like the X676C layout, but is still inferred.** `/proc/device-tree/memory/reg` is
+`0x40000000`+`0x20000000` — a 512 MiB window at 1 GiB, which is LK's own view and useless for XNU. The
+reserved nodes give the real shape: rank 0 ends at `0x13ffff000`, rank 1 at `0x23ffff000`, and
+`MemTotal` is 7,960,428 kB (7.59 GiB) — two 4 GiB ranks minus carve-outs, exactly as on X676C. So
+`0x140000000`+`0xffff0000` is very likely right, but it stays **INFERRED** until the shim prints the live
+DTB. Cheap to confirm, so confirm it first.
+
+**5. 480×854 is not a phone-shaped screen for iOS.** iOS assumes an iPhone. HelioDarwin handles this the
 way every port does: publish an iPhone canvas to the ADT (`display-scale`, `canvas-width/height`) and let
 the framebuffer path scale. At 480×854 the honest options are:
 
@@ -135,25 +156,23 @@ All three are answered by step 2, which is deliberately the cheapest thing that 
 
 Ordered so that each step produces evidence before the next one risks anything.
 
-### 0. Read the phone (non-destructive)
+### 0. Read the phone — DONE 2026-11-06
 
-```sh
-adb shell getprop ro.board.platform                              # mt6789
-adb shell cat /proc/device-tree/chosen/atag,videolfb-lcmname     # the panel actually fitted
-adb shell cat /proc/device-tree/memory/reg                       # real DRAM window
-adb shell dmesg | grep -iE "lcm|panel|chsc|touch|DRAM|rank"      # resolved panel + touch probe
-adb shell wm size; adb shell wm density
-adb shell cat /proc/device-tree/reserved-memory/*/reg            # pstore / carve-outs
-# rooted: dd if=/dev/block/by-name/expdb of=expdb.bin            # LK's own boot log
-# rooted: dmesg while the vendor chsc5xxx driver is loaded        # touch protocol
-```
+Done on a rooted Android 13 GSI (`adb root`; as `shell`, `/proc/device-tree` is `EACCES`). What was
+learned is in the table above and in "the recon questions are answered". The panel and touch questions are
+closed; DRAM is the one open item.
 
-Output lands in `recon/` (git-ignored: live DT carries the serial).
+Re-run any of it with `tools/recon.sh` (writes to `recon/`, git-ignored — the live DT carries the serial).
 
-### 1. Device-integrity files
+Still worth collecting before step 2: the LK boot log (`dd if=/dev/block/by-name/expdb`, root), and a
+`dmesg` capture with the vendor `chsc5xxx` driver's probe lines (they were already past by the time recon
+ran, since `dmesg` only holds the last few minutes here).
 
-`devices/jellystar/soc.args` (done) and `device.conf` (done) are checked by `tools/check-facts.py`.
-Fill the *phone* rows above from step 0 and re-run it; the plan is only as good as that check.
+### 1. Device-integrity files — DONE
+
+`devices/jellystar/soc.args` and `device.conf` are checked by `tools/check-facts.py`: 37 facts re-derived
+from the DT, 2 reported as `PHONE` where the packaged DTB disagrees with the phone (the framebuffer), 19
+skipped because the fact does not live in the DT. Keep it green.
 
 ### 2. Shim bring-up, no XNU
 

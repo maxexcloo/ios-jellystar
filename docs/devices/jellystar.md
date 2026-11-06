@@ -9,6 +9,7 @@ Made by `tools/docs-gen.py jellystar` from [devices/jellystar/device.conf](../..
 | soc | mt6789 (Helio G99, 6x A55 + 2x A76, Mali-G57 MC2) |
 | ios | iOS 16.7.16 (iPhone X D22AP userland, target, not yet attempted) |
 | base | squeeeeezy/HelioDarwin (Infinix Note 12 2023, same MT6789) -- nothing applied to this phone |
+| recon | done 2026-11-06 on rooted Android 13 GSI; tools/recon.sh re-runs it |
 | boot | plan: boot_b, Android kept on boot_a (virtual A/B); whether LK accepts an XNU kernel is step 2 |
 | facts | devices/jellystar/soc.args, checked by tools/check-facts.py against the DT |
 | dt | fw/jellystar.dtb + fw/dtbo.img from tools/extract-dt.py (Lineage 20261101) |
@@ -21,11 +22,11 @@ Made by `tools/docs-gen.py jellystar` from [devices/jellystar/device.conf](../..
 | Subsystem | State | Notes |
 |---|---|---|
 | boot | missing | nothing built or flashed; whether Unihertz LK takes an XNU kernel is untested |
-| display | missing | panel unresolved: overlay offers ST7701S (vdo) *and* TD4330 (cmd), 480x854 |
-| touch | missing | Chipsea chsc5xxx on i2c0 0x2e -- no driver exists in any port |
+| display | missing | panel KNOWN: panel_ST7701S_Z30043, video mode, 480x854 @60Hz; no XNU driver yet |
+| touch | missing | chsc5xxx_touch on i2c0 0x2e (event2) -- no XNU driver exists in any port |
 | gpu | missing | Mali-G57 MC2 at 0x13000000, same part as the working X676C port |
 | cpu | missing | 6x A55 published, 2x A76 excluded (same choice as X676C) |
-| storage | missing | MTK UFS at 0x11270000, same host as X676C; iosroot carve undesigned |
+| storage | missing | MTK UFS 0x11270000 confirmed; userdata 228 GiB, iosroot carve undesigned |
 | buttons | missing | MT6366 keys on pwrap (power 116, func2 250), keypad 0x10010000 (volume 114/115, red key scan 249) |
 | backlight | missing | disp_pwm0 0x1100e000 behind whichever panel is fitted |
 | battery | missing | MT6366 fuel gauge not driven |
