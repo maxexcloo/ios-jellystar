@@ -55,7 +55,7 @@ in hand) and *Android* (they come from the Lineage tree, not the DT).
 | Panel | ST7701S (`vdo`) **or** TD4330 (`cmd`), 480×854 | ili7835 1080×2400 cmd | ❌ new driver |
 | LK framebuffer | `/chosen/atag,videolfb-fb_base_l` = **`0x7e605000`**, vram 0x01be0000 (~29 MiB) | `0xfeabe000` | ⚠ phone |
 | DRAM window | base DT says `0x40000000`+1 GiB — **stale, ignore** | rank-1 `0x140000000` | ⚠ phone |
-| Boot slot | virtual A/B, real `boot_b`, recovery inside `vendor_boot` | `boot_a` via rooted Android | different |
+| Boot slot | virtual A/B; `boot`, `vendor_boot`, `dtbo`, `vbmeta` are slotted; recovery inside `vendor_boot` | `boot_a` via rooted Android | different |
 
 ### Three facts that decide the work
 
@@ -100,9 +100,14 @@ solvable problem — it is a 3-inch screen.
 
 Copied from the Lineage and KLiOS716 notes, because both were learned on hardware:
 
-- **`fastboot boot` does not work on MTK LK.** Everything is a slot flash. Good news: the Jelly Star is
-  **virtual A/B with a real `boot_b`**, so Android can stay bootable on `_a` while `boot_b` holds the
-  XNU shim. That is strictly safer than the `ios-redmi` plan (which overwrites `userdata` and hopes).
+- **`fastboot boot` is expected to be rejected, and untested on this phone.** Everything is assumed to be a
+  slot flash. The Jelly Star is **virtual A/B** (`AB_OTA_UPDATER`, slots for `boot`, `vendor_boot`, `dtbo`,
+  `vbmeta`; the Lineage notes rely on Magisk's "install to inactive slot"), so in principle Android can stay
+  bootable on `_a` while `boot_b` holds the XNU shim. That is the intended safety model — but *whether
+  Unihertz's LK accepts `fastboot boot` at all, and whether a separate `boot_b` accepts a non-Android kernel*,
+  has not been confirmed here. Check with `fastboot getvar current-slot` / `fastboot getvar slot-count`
+  before designing around it. It is still strictly safer than the `ios-redmi` plan (which overwrites
+  `userdata` and hopes).
 - **Never flash `boot_a`, never relock the bootloader.** Unihertz's LK only trusts Unihertz's signing key
   and there is no `avb_custom_key`, so a relocked phone refuses to boot a modified image, and unlocking
   again needs a booting Android.
@@ -116,9 +121,15 @@ Copied from the Lineage and KLiOS716 notes, because both were learned on hardwar
 - Unihertz **publishes no kernel source**, so nothing can be read from vendor source: the panel and touch
   init have to come from the vendor modules and from observation.
 
-Untested here and to be treated as risk: whether Unihertz's LK will accept a boot image whose kernel is
-XNU (HelioDarwin's X676C LK wants a gzip `Image` in a v4 image and rejects `fastboot boot`; the Jelly Star
-is the same LK family), and whether `boot_b` alone is enough or `vbmeta`/`dtbo` also have to be staged.
+Untested here, and to be treated as risk rather than assumption:
+
+- whether Unihertz's LK accepts a boot image whose kernel is XNU at all — the X676C LK wants a gzip `Image`
+  in a v4 image, and the Jelly Star is the same LK family;
+- whether `fastboot boot` works (X676C's LK rejects it);
+- whether writing `boot_b` alone is enough, or `vbmeta`/`dtbo` also have to be staged to satisfy verified
+  boot.
+
+All three are answered by step 2, which is deliberately the cheapest thing that touches the phone.
 
 ## Work plan
 

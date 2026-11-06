@@ -9,7 +9,7 @@ Made by `tools/docs-gen.py jellystar` from [devices/jellystar/device.conf](../..
 | soc | mt6789 (Helio G99, 6x A55 + 2x A76, Mali-G57 MC2) |
 | ios | iOS 16.7.16 (iPhone X D22AP userland, target, not yet attempted) |
 | base | squeeeeezy/HelioDarwin (Infinix Note 12 2023, same MT6789) -- nothing applied to this phone |
-| boot | plan: boot_b (virtual A/B, Android stays on boot_a); no fastboot boot on MTK LK |
+| boot | plan: boot_b, Android kept on boot_a (virtual A/B); whether LK accepts an XNU kernel is step 2 |
 | facts | devices/jellystar/soc.args, checked by tools/check-facts.py against the DT |
 | dt | fw/jellystar.dtb + fw/dtbo.img from tools/extract-dt.py (Lineage 20261101) |
 | plan | docs/jellystar/port-plan.md, docs/jellystar/diff-vs-x676c.md |
@@ -20,7 +20,7 @@ Made by `tools/docs-gen.py jellystar` from [devices/jellystar/device.conf](../..
 
 | Subsystem | State | Notes |
 |---|---|---|
-| boot | missing | nothing built or flashed; image layout not chosen |
+| boot | missing | nothing built or flashed; whether Unihertz LK takes an XNU kernel is untested |
 | display | missing | panel unresolved: overlay offers ST7701S (vdo) *and* TD4330 (cmd), 480x854 |
 | touch | missing | Chipsea chsc5xxx on i2c0 0x2e -- no driver exists in any port |
 | gpu | missing | Mali-G57 MC2 at 0x13000000, same part as the working X676C port |
