@@ -4,14 +4,14 @@ Experimental iOS 16 / XNU bring-up for the Unihertz Jelly Star (MT6789 / Helio G
 
 ## Status
 
-**No custom code has executed on the local phone.** The Android-default chainloader builds and passes offline checks. An explicit one-shot XNU payload path is now prepared for offline builds; neither path has run on the Jelly.
+**No custom code has executed on the local phone.** The Android-default chainloader builds and passes offline checks. The explicit one-shot XNU image also builds from the linked Jelly kernel; neither path has run on the Jelly.
 
 | Area           | Evidence & Remaining Work                                                                                |
 | -------------- | -------------------------------------------------------------------------------------------------------- |
 | Boot           | The slot-B attempt could not execute; Android-default v4 chainloader built, LK loading/fallback untested |
 | Display        | ST7701S timings identified; Jelly-sized XNU early console prepared; scanout untested                     |
 | Touch          | Vendor-grounded 28-byte CHSC decoder host-tested; no I2C/XNU driver; reset-time firmware unresolved      |
-| XNU & storage  | Pinned MT6789 kernel pipeline, Jelly ADT and mockfs PID 1 payload prepared; no partition selected        |
+| XNU & storage  | Jelly XNU linked; ADT/mockfs PID 1 payload and 27 MB image built; storage unselected                     |
 | Other hardware | No locally established GPU, networking, audio, camera, sensors or power-management support               |
 
 ## Build & Check
@@ -44,7 +44,9 @@ Only an image built with `--xnu-payload` recognises `JELLYSTAR:XNU` in pmsg. It 
 
 `tools/touch-report.py REPORT.bin` decodes a saved 28-byte CHSC report. Disassembly of the local vendor module establishes five five-byte records (not the DT's ten-contact maximum), 12-bit coordinates, slot/event fields and report address `0x2000002c` sent big-endian before a repeated-start read. Tests use synthetic reports; no real report, reset sequence or volatile-firmware requirement has been validated.
 
-`tools/build-root.py BuildManifest.plist --check-inputs` resolves locally supplied D22AP 16.7.16 / 20H392 OS and cryptex images. Its optional full macOS build creates a standalone HFS+ image, preserves numeric ownership, links cryptex content, applies pinned root tweaks and invalidates MobileGestalt's hardware cache. It needs host root privileges and does not choose or provision a Jelly partition. Camera/flash must remain unadvertised until media services work; replacing a loaded signed executable requires rename. The full root image has not been built here.
+`tools/build-root.py BuildManifest.plist --check-inputs` resolves locally supplied D22AP 16.7.16 / 20H392 OS and cryptex images. Its optional full macOS build creates a standalone HFS+ image, preserves numeric ownership, links cryptex content, applies pinned root tweaks and invalidates MobileGestalt's hardware cache. It needs host root privileges and does not choose or provision a Jelly partition. Camera/flash must remain unadvertised until media services work; replacing a loaded signed executable requires rename. The full root image has not been built: host `sudo` requires a password. The native format/mount/verify/cleanup path passed a synthetic 64 MiB image test; all three supplied Apple images mounted read-only, but the full copy and ownership/fixup path remains unexercised.
+
+Offline verification: [the full XNU compile/link and startup check passed in CI](https://github.com/maxexcloo/ios-jellystar/actions/runs/42337996329). Shared checks and 17 host tests pass. The generated ADT round-trips with the Jelly GIC/timer/framebuffer facts; the high-memory window excludes all 33 saved live DT/FDT reservations. The final payload passes the compiled loader validator and contains the exact signed test `init`. `out/xnu/boot/chainboot.img` is 27,009,024 bytes and passes Android/header/ramdisk preservation checks. These results establish build structure and host behaviour; LK loading, Android fallback, pmsg survival, XNU entry, console pixels and userspace syscalls remain physically untested.
 
 ## Device Workflow
 
