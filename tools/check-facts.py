@@ -54,6 +54,46 @@ RULES = {
     "soc_disp_mutex0": ("dtb", "/soc/disp_mutex@14001000", "reg", "reg64", 0),
     "soc_fb": ("dtb", "/chosen", "atag,videolfb-fb_base_l", "u32", 0),
     "soc_fb_vramsize": ("dtb", "/chosen", "atag,videolfb-vramSize", "u32", 0),
+    # LK adds these reserved-memory nodes to the DT it passes; the packaged DTB
+    # from the release image has none of them. Checked against recon/live.dtb
+    # (the phone's own /sys/firmware/fdt) when that exists -- see load().
+    "soc_fb_reserved": (
+        "live",
+        "/reserved-memory/mblock-13-framebuffer",
+        "reg",
+        "reg64",
+        1,
+    ),
+    "soc_pstore": ("live", "/reserved-memory/mblock-10-pstore", "reg", "reg64", 0),
+    "soc_pstore_size": ("live", "/reserved-memory/mblock-10-pstore", "reg", "reg64", 1),
+    "soc_aee_kinfo": (
+        "live",
+        "/reserved-memory/mblock-9-aee_debug_kinfo",
+        "reg",
+        "reg64",
+        0,
+    ),
+    "soc_minirdump": (
+        "live",
+        "/reserved-memory/mblock-11-minirdump",
+        "reg",
+        "reg64",
+        0,
+    ),
+    "soc_dram_rank0_end": (
+        "live",
+        "/reserved-memory/mblock-1-dramc-rk0",
+        "reg",
+        "reg64",
+        0,
+    ),
+    "soc_dram_rank1_end": (
+        "live",
+        "/reserved-memory/mblock-2-dramc-rk1",
+        "reg",
+        "reg64",
+        0,
+    ),
     "soc_gpu": ("dtb", "/soc/mali@13000000", "reg", "reg64", 0),
     "soc_gpu_size": ("dtb", "/soc/mali@13000000", "reg", "reg64", 1),
     "soc_gpu_spis": ("dtb", "/soc/mali@13000000", "interrupts", "spis", None),
@@ -120,35 +160,48 @@ NOT_IN_DT = {
     "panel_density": "verified on the phone: wm density 220",
     "panel_driver": "verified on the phone: lsmod panel_ST7701S_Z30043",
     "panel_mode": "verified on the phone: lsmod vdo panel",
+    # Panel timing and init sequence are decoded from the vendor panel module,
+    # not the DT: tools/panel-init.py re-derives each of these.
+    "panel_htotal": "decoded from panel-ST7701S_Z30043.ko (tools/panel-init.py)",
+    "panel_vtotal": "decoded from panel-ST7701S_Z30043.ko (tools/panel-init.py)",
+    "panel_hbp": "decoded from panel-ST7701S_Z30043.ko (tools/panel-init.py)",
+    "panel_hfp": "decoded from panel-ST7701S_Z30043.ko (tools/panel-init.py)",
+    "panel_hsync": "decoded from panel-ST7701S_Z30043.ko (tools/panel-init.py)",
+    "panel_vbp": "decoded from panel-ST7701S_Z30043.ko (tools/panel-init.py)",
+    "panel_vfp": "decoded from panel-ST7701S_Z30043.ko (tools/panel-init.py)",
+    "panel_vsync": "decoded from panel-ST7701S_Z30043.ko (tools/panel-init.py)",
+    "panel_clock_khz": "decoded: 28000 kHz / (522*894) = 60.00 Hz, matches DRM",
+    "panel_init_objects": "decoded from panel-ST7701S_Z30043.ko (tools/panel-init.py)",
+    "panel_init_sym": "decoded from panel-ST7701S_Z30043.ko (tools/panel-init.py)",
     "soc_fb_lcmname": "the packaged DTB's value is WRONG for this phone (see panel_driver)",
+    "soc_lk_lcmname": "LK boot log only (expdb): LK says ST7701S_Z30043_drv, /chosen disagrees",
     "soc_touch_driver": "verified on the phone: lsmod chsc5xxx_touch",
     "soc_touch_input": "verified on the phone: /proc/bus/input/devices event2",
-    "soc_dram_kernel_base": "INFERRED between the two dramc pages; verify in the shim",
-    "soc_dram_kernel_size": "INFERRED between the two dramc pages; verify in the shim",
+    "soc_touch_fw_embedded": "decoded from chsc5xxx_touch.ko: .rodata upd_data, 85848 B, magic CHSC",
+    "soc_touch_fw_bytes": "decoded from chsc5xxx_touch.ko (magic CHSC)",
+    "soc_touch_proto": "decoded from chsc5xxx_touch.ko: semi_touch_core_read/core_write + bulk",
+    "soc_touch_report_parse": "decoded from chsc5xxx_touch.ko: the function to port",
     "soc_mmsys_config": "not present in this DTB",
     "soc_ovl0": "not present in this DTB",
-
-    # LK adds these reserved-memory nodes to the live DTB at boot; the packaged
-    # DTB from the release image has none of them. Phone values only.
-    "soc_fb_reserved": "phone: reserved-memory/mblock-13-framebuffer (LK adds it)",
-    "soc_pstore": "phone: reserved-memory/mblock-10-pstore (LK adds it)",
-    "soc_pstore_size": "phone: reserved-memory/mblock-10-pstore (LK adds it)",
-    "soc_aee_kinfo": "phone: reserved-memory/mblock-9-aee_debug_kinfo (LK adds it)",
-    "soc_minirdump": "phone: reserved-memory/mblock-11-minirdump (LK adds it)",
-    "soc_dram_rank0_end": "phone: reserved-memory/mblock-1-dramc-rk0 (LK adds it)",
-    "soc_dram_rank1_end": "phone: reserved-memory/mblock-2-dramc-rk1 (LK adds it)",
+    # Storage geometry comes from /proc/partitions and blockdev, not the DT.
+    "soc_lun": "/proc/partitions: the UFS LUN is sdc",
+    "soc_block": "/sys/block/sdc/queue/logical_block_size = 4096",
+    "soc_lun_bytes": "/sys/block/sdc/size x 4096",
+    "part_userdata_bytes": "blockdev --getsize64: 228.0 GiB",
+    "part_userdata_kib": "/proc/partitions column 3 is KiB, not sectors",
+    "part_super_bytes": "blockdev --getsize64: 9.0 GiB",
+    "part_super_kib": "/proc/partitions column 3 is KiB, not sectors",
+    "part_expdb_bytes": "blockdev --getsize64: 128 MiB (LK log ring)",
 }
 
 # Facts whose value was read off the *running phone* and which the packaged DTB
 # in the release/firmware image contradicts. These are reported, not corrected:
 # seeing the divergence is the point. A new entry here needs a reason and a date.
 KNOWN_DIVERGENCE = {
-    "soc_fb":
-        "phone 2026-11-06: /chosen says 0xffb0c000; the packaged DTB says 0x7e605000. LK passes its "
-        "own DTB at boot, so the packaged one is not authoritative.",
-    "soc_fb_vramsize":
-        "phone 2026-11-06: /chosen says 0x4c0000; the packaged DTB says 0x1be0000 (sized for a "
-        "1080x2400 panel). The phone has 480x854.",
+    "soc_fb": "phone 2026-11-06: /chosen says 0xffb0c000; the packaged DTB says 0x7e605000. LK passes its "
+    "own DTB at boot, so the packaged one is not authoritative.",
+    "soc_fb_vramsize": "phone 2026-11-06: /chosen says 0x4c0000; the packaged DTB says 0x1be0000 (sized for a "
+    "1080x2400 panel). The phone has 480x854.",
 }
 
 
@@ -157,6 +210,13 @@ def load(fw):
         "dtb": os.path.join(fw, "jellystar.dtb"),
         "dtbo": os.path.join(fw, "dtbo.img"),
     }
+    # The live DT is optional: it only exists if someone ran recon with root
+    # (`adb exec-out 'cat /sys/firmware/fdt' > recon/live.dtb`). Without it the
+    # "live" rows report SKIP rather than passing, so a missing recon is never
+    # mistaken for a verified fact.
+    live = os.path.join(ROOT, "recon", "live.dtb")
+    if os.path.exists(live):
+        paths["live"] = live
     trees = {}
     for name, path in paths.items():
         if not os.path.exists(path):
@@ -210,6 +270,30 @@ def got_for(value, kind, index):
     return cells if index is None else [cells[index]]
 
 
+def derived_value(trees, key):
+    if "live" not in trees:
+        return None
+    if key.startswith("soc_pmsg"):
+        value = prop_of(trees, "live", "/chosen", "bootargs")
+        if value is None:
+            return None
+        args = dict(token.split("=", 1) for token in value.rstrip(b"\0").decode().split()
+                    if token.startswith("ramoops.") and "=" in token)
+        size = int(args["ramoops.pmsg_size"], 0)
+        if key == "soc_pmsg_size":
+            return size
+        return int(args["ramoops.mem_address"], 0) + int(args["ramoops.mem_size"], 0) - size
+    rank0 = prop_of(trees, "live", "/reserved-memory/mblock-1-dramc-rk0", "reg")
+    rank1 = prop_of(trees, "live", "/reserved-memory/mblock-2-dramc-rk1", "reg")
+    if rank0 is None or rank1 is None:
+        return None
+    base = int.from_bytes(rank0[:8], "big") + 0x1000
+    if key == "soc_dram_kernel_base":
+        return base
+    # Preserve the reference's conservative 64 KiB alignment below the training page.
+    return (int.from_bytes(rank1[:8], "big") - base) & ~0xffff
+
+
 def main(argv):
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -225,6 +309,17 @@ def main(argv):
 
     for key in sorted(facts):
         expected = facts[key]
+        if key in ("soc_pmsg", "soc_pmsg_size", "soc_dram_kernel_base", "soc_dram_kernel_size"):
+            got = derived_value(trees, key)
+            if got is None:
+                print("%-22s SKIP    requires the saved live DT" % key)
+                skipped += 1
+            elif got != int(expected, 0):
+                print("%-22s MISMATCH derived=%#x conf=%s" % (key, got, expected))
+                bad += 1
+            else:
+                print("%-22s ok      %#x (derived from live DT)" % (key, got))
+            continue
         if key in NOT_IN_DT:
             print("%-22s SKIP    %s" % (key, NOT_IN_DT[key]))
             skipped += 1
@@ -237,6 +332,10 @@ def main(argv):
             skipped += 1
             continue
         src, node, prop, kind, index = rule
+        if src not in trees:
+            print("%-22s SKIP    requires the saved live DT" % key)
+            skipped += 1
+            continue
         value = prop_of(trees, src, node, prop)
         if value is None:
             print("%-22s MISSING %s %s" % (key, node, prop))
@@ -255,9 +354,15 @@ def main(argv):
             # The timer has four PPIs <13 14 11 10>; keep only the one asked for.
             got = [x for x in got if x in want]
         if got != want and key in KNOWN_DIVERGENCE:
-            print("%-22s PHONE   conf=%s dt=%s  (%s)" % (
-                key, ",".join(hex(x) for x in want), ",".join(hex(x) for x in got),
-                KNOWN_DIVERGENCE[key]))
+            print(
+                "%-22s PHONE   conf=%s dt=%s  (%s)"
+                % (
+                    key,
+                    ",".join(hex(x) for x in want),
+                    ",".join(hex(x) for x in got),
+                    KNOWN_DIVERGENCE[key],
+                )
+            )
             diverged.append(key)
         elif got != want:
             print(
@@ -275,7 +380,7 @@ def main(argv):
         for path, node in tree.items():
             if path.startswith("/cpus/cpu@") and "reg" in node:
                 cpus.append(fdt.u32s(node["reg"])[0])
-    want_cpus = want_list(facts.get("soc_cpu_mpidr", ""))
+    want_cpus = want_list(facts["soc_cpu_mpidr"])
     if sorted(cpus) != sorted(want_cpus):
         print(
             "%-22s MISMATCH dt=%s conf=%s"

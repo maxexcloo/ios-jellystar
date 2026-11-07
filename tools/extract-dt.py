@@ -103,7 +103,6 @@ def main(argv):
             hdr["dtb_addr"],
         )
     )
-    print("cmdline: %r" % hdr["cmdline"])
     print("fdt: %r" % describe(dtb))
 
     if args.dtbo:
