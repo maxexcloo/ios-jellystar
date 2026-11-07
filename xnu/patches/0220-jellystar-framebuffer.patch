@@ -1,0 +1,194 @@
+--- a/iokit/Kernel/arm/SweetBoard.h
++++ b/iokit/Kernel/arm/SweetBoard.h
+@@ -52,4 +52,21 @@
+ 	return cached == 1;
+ }
+ 
++static inline bool
++sweet_board_jellystar(void)
++{
++	static int cached = -1;
++
++	if (cached < 0) {
++		DTEntry root;
++		void const *prop;
++		unsigned int size;
++
++		cached = SecureDTLookupEntry(NULL, "/", &root) == kSuccess &&
++		    SecureDTGetProperty(root, "compatible", &prop, &size) == kSuccess &&
++		    sweet_strlist_has((const char *)prop, size, "unihertz,jellystar");
++	}
++	return cached == 1;
++}
++
+ #endif /* _IOKIT_ARM_SWEETBOARD_H */
+--- a/iokit/Kernel/arm/SweetFramebuffer.cpp
++++ b/iokit/Kernel/arm/SweetFramebuffer.cpp
+@@ -272,6 +272,7 @@
+ 	static void vsyncFired(OSObject *owner, IOTimerEventSource *sender);
+ 
+ public:
++	bool          fJelly;          /* LK-owned video-mode framebuffer: CPU copies only */
+ 	uint64_t      fPhys;
+ 	uint32_t      fWidth, fHeight, fRowBytes;
+ 	uint32_t      fLogicalW, fLogicalH;     /* size reported to userland */
+@@ -442,7 +443,7 @@
+ bool
+ AppleCLCD::startWatchdog(void)
+ {
+-	if (!sweet_board_x676c()) {
++	if (fJelly || !sweet_board_x676c()) {
+ 		return true;
+ 	}
+ 	IOMemoryDescriptor *memory = IOMemoryDescriptor::withPhysicalAddress(
+@@ -566,10 +567,11 @@
+ 	if (!IOService::start(provider)) {
+ 		return false;
+ 	}
++	fJelly = sweet_board_jellystar();
+ 	if (!startWatchdog()) {
+ 		return false;
+ 	}
+-	if (!sweet_board_x676c()) {
++	if (!fJelly && !sweet_board_x676c()) {
+ 		topaz_modem_init();
+ 	}
+ 	sweet_busy_init();
+@@ -583,8 +585,17 @@
+ 		stopWatchdog();
+ 		return false;
+ 	}
++	if (fJelly && (fPhys != JELLY_FB_PA || fWidth != JELLY_FB_WIDTH ||
++	    fHeight != JELLY_FB_HEIGHT || fRowBytes != JELLY_FB_STRIDE ||
++	    video.v_depth != 32 || round_page((uint64_t)fRowBytes * fHeight) > JELLY_FB_SIZE)) {
++		IOLog("JELLY FB: boot framebuffer differs from the verified reservation\n");
++		return false;
++	}
+ 	int native = 0;
+ 	PE_parse_boot_argn("sweetfb_native", &native, sizeof(native));
++	if (fJelly) {
++		native = 1;
++	}
+ 	fLogicalW = fWidth;
+ 	fLogicalH = fHeight;
+ 	if (!native && fWidth <= SWEET_FB_LOGICAL_W && fHeight <= SWEET_FB_LOGICAL_H) {
+@@ -594,7 +605,7 @@
+ 	/* x rounded down to 4 pixels: the panel window must start 16-byte aligned (MDP fetch) */
+ 	fOffX = ((int32_t)(fLogicalW - fWidth) / 2) & ~3;
+ 	fOffY = (int32_t)(fLogicalH - fHeight) / 2;
+-	if (sweet_board_x676c()) {
++	if (fJelly || sweet_board_x676c()) {
+ 		/* Allocate before publishing a surface or attaching a timer. The
+ 		 * physical surface's 32-bit rounded allocation must cover this frame. */
+ 		uint64_t bytes = (uint64_t)fRowBytes * fHeight;
+@@ -635,24 +646,26 @@
+ 	/*
+ 	 * Qualcomm MDP/DSI0 (SM6225). x676c: MediaTek DSI0 and DISP_MUTEX0.
+ 	 */
+-	if (sweet_board_x676c()) {
++	if (!fJelly && sweet_board_x676c()) {
+ 		fMtkDsi = (volatile uint32_t *)ml_io_map(0x14013000, 0x1000);
+ 		fMtkMutex = (volatile uint32_t *)ml_io_map(0x14001000, 0x1000);
+ 		sMtkDsi = fMtkDsi;
+ 		sMtkMutex = fMtkMutex;
+ 		IOLog("SWEET FB: MT6789 DSI0 (0x14013000) and MUTEX0 (0x14001000) mapped for HW scanout\n");
+-	} else {
++	} else if (!fJelly) {
+ 		fVig0 = (volatile uint32_t *)ml_io_map(0x05e05000, 0x1000);
+ 		fCtl0 = (volatile uint32_t *)ml_io_map(0x05e02000, 0x1000);
+ 		fDsi = (volatile uint8_t *)ml_io_map(0x05e94000, 0x1000);
+ 	}
+-	fDsiBuf = IOBufferMemoryDescriptor::inTaskWithPhysicalMask(kernel_task,
+-	    kIODirectionInOut | kIOMemoryPhysicallyContiguous, page_size, 0x00000000fffff000ull);
+-	fDsiBufPhys = fDsiBuf ? fDsiBuf->getPhysicalSegment(0, NULL, kIOMemoryMapperNone) : 0;
+-	fBlLock = IOLockAlloc();
+-	fBlLevel = 0x133;                       /* panel init level (stock DT) */
+-	fBlSent = ~0u;
+-	fBlCall = thread_call_allocate(&AppleCLCD::blWork, this);
++	if (!fJelly) {
++		fDsiBuf = IOBufferMemoryDescriptor::inTaskWithPhysicalMask(kernel_task,
++		    kIODirectionInOut | kIOMemoryPhysicallyContiguous, page_size, 0x00000000fffff000ull);
++		fDsiBufPhys = fDsiBuf ? fDsiBuf->getPhysicalSegment(0, NULL, kIOMemoryMapperNone) : 0;
++		fBlLock = IOLockAlloc();
++		fBlLevel = 0x133;                       /* panel init level (stock DT) */
++		fBlSent = ~0u;
++		fBlCall = thread_call_allocate(&AppleCLCD::blWork, this);
++	}
+ 	if (fDsi != NULL) {
+ 		IOLog("SWEET FB: DSI0 ctrl %#x, brightness via DCS 0x51\n", *(volatile uint32_t *)(fDsi + 0x004));
+ 		setProperty("IOMFBBrightnessLevel", (unsigned long long)(200u << 16), 32);
+@@ -678,7 +691,7 @@
+ 	}
+ 	uint32_t accelOn = 1;
+ 	(void)PE_parse_boot_argn("sweetaccel", &accelOn, sizeof(accelOn));
+-	IOAcceleratorES *accel = accelOn ? OSTypeAlloc(IOAcceleratorES) : NULL;
++	IOAcceleratorES *accel = accelOn && !fJelly ? OSTypeAlloc(IOAcceleratorES) : NULL;
+ 	if (accel != NULL && accel->init()) {
+ 		accel->setName("sgx");
+ 		if (accel->attach(this)) {
+@@ -852,7 +865,7 @@
+ 	}
+ 	OSSafeReleaseNULL(accel);
+ 	/* dpu sm6115 catalog: intf_1 at mdp+0x6a800, mdp at 0x5e01000 */
+-	fIntf1 = sweet_board_x676c() ? NULL : (volatile uint32_t *)ml_io_map(0x05e6b000, 0x1000);
++	fIntf1 = fJelly || sweet_board_x676c() ? NULL : (volatile uint32_t *)ml_io_map(0x05e6b000, 0x1000);
+ 	if (fIntf1 != NULL) {
+ 		volatile uint32_t *r = fIntf1 + 0x800 / 4;
+ 		r[0x0a8 / 4] = 0x3;     /* FRAME_LINE_COUNT_EN */
+@@ -935,6 +948,9 @@
+ 	OSSafeReleaseNULL(strideAlignmentKey);
+ 	OSSafeReleaseNULL(planeAlignmentKey);
+ 	registerService();
++	if (fJelly) {
++		IOLog("JELLY FB: CPU-copy presentation; LK video scanout unchanged; no panel/GPU/power control\n");
++	}
+ 	IOLog("SWEET FB: AppleCLCD %ux%u stride %u at 0x%llx, default surface %u, presented as %ux%u\n",
+ 	    fWidth, fHeight, fRowBytes, fPhys, fSurface->id, fLogicalW, fLogicalH);
+ 	return true;
+@@ -1318,19 +1334,23 @@
+ 	if (fb != NULL && fb->fVig0 != NULL && fb->fScanPhys != fb->fConsPhys) {
+ 		fb->scanFrom(fb->fConsPhys, fb->fRowBytes);
+ 	}
+-	mtk_dsi_push_hw();
++	if (fb == NULL || !fb->fJelly) {
++		mtk_dsi_push_hw();
++	}
+ }
+ 
+ void
+ AppleCLCD::mtkDsiPush(void)
+ {
+-	mtk_dsi_push_hw();
++	if (!fJelly) {
++		mtk_dsi_push_hw();
++	}
+ }
+ 
+ void
+ AppleCLCD::traceFrame(void)
+ {
+-	if (!sweet_board_x676c() || !sweet_fb_trace_enabled() || fPixels == 0) {
++	if (fJelly || !sweet_board_x676c() || !sweet_fb_trace_enabled() || fPixels == 0) {
+ 		return;
+ 	}
+ 	uint32_t frame = ++fTraceFrames;
+@@ -1653,7 +1673,7 @@
+ 	}
+ 	if (fFlip[0] != NULL) {
+ 		flipBack();
+-	} else if (sweet_board_x676c()) {
++	} else if (fJelly || sweet_board_x676c()) {
+ 		/*
+ 		 * The completed frame was copied to panel memory. The MTK DSI/OVL
+ 		 * fetches from DRAM, so clean that mapping before triggering the push.
+@@ -1798,6 +1818,10 @@
+ 		}
+ 		break;
+ 	case kSweetFBRequestPowerChange:
++		if (fFB->fJelly) {
++			ret = kIOReturnUnsupported;
++			break;
++		}
+ 		if (args->scalarInputCount >= 1) {
+ 			bool off = args->scalarInput[0] == 0;
+ 			/*

@@ -50,6 +50,8 @@ jobs:
         run: |
           export PATH="$PWD/out/bin:$PATH"
           python tools/prepare-kernel.py --build
+      - name: Check ADT Opt-In Profiles
+        run: python -B -m unittest discover -s tests -p test_payload.py
       - uses: actions/upload-artifact@v7
         with:
           name: jellystar-xnu

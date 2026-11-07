@@ -1,0 +1,92 @@
+--- a/iokit/Kernel/arm/hid/SweetHID.cpp
++++ b/iokit/Kernel/arm/hid/SweetHID.cpp
+@@ -20,6 +20,11 @@
+ #include <sys/errno.h>
+ #include <libkern/c++/OSArray.h>
+ #include <pexpert/pexpert.h>
++#include <pexpert/arm64/jellystar.h>
++#include "../SweetBoard.h"
++
++extern "C" int jelly_touch_present(void);
++extern "C" void jelly_touch_start(void);
+ 
+ #include "IOHIDEventService.h"
+ #include "IOHIDEventServiceUserClient.h"
+@@ -364,6 +369,7 @@
+ private:
+ 	IOLock *fLock;
+ 	int fLogicalW, fLogicalH, fOffX, fOffY;
++	int fPanelW, fPanelH, fEdgePixels;
+ 	bool fDown[SWEET_TOUCH_FINGERS];
+ 	bool fEdge[SWEET_TOUCH_FINGERS];
+ 	IOFixed fX[SWEET_TOUCH_FINGERS];
+@@ -411,23 +417,31 @@
+ bool
+ SweetHIDTouch::start(IOService *provider)
+ {
++	const bool jelly = sweet_board_jellystar();
++	if (jelly && !jelly_touch_present()) return false;
+ 	fLock = IOLockAlloc();
+ 	if (!fLock || !IOHIDEventService::start(provider)) {
+ 		return false;
+ 	}
+ 	int native = 0;
+ 	PE_parse_boot_argn("sweetfb_native", &native, sizeof(native));
+-	fLogicalW = native ? 1080 : 1125;
+-	fLogicalH = native ? 2400 : 2436;
+-	fOffX = ((fLogicalW - 1080) / 2) & ~3;           /* as SweetFramebuffer.cpp */
+-	fOffY = (fLogicalH - 2400) / 2;
+-	/* The digitizer covers the main display (backboardd maps it 1:1). */
++	fPanelW = jelly ? JELLY_TOUCH_XRES : 1080;
++	fPanelH = jelly ? JELLY_TOUCH_YRES : 2400;
++	fLogicalW = jelly ? fPanelW : (native ? 1080 : 1125);
++	fLogicalH = jelly ? fPanelH : (native ? 2400 : 2436);
++	fOffX = ((fLogicalW - fPanelW) / 2) & ~3;
++	fOffY = (fLogicalH - fPanelH) / 2;
++	/* Preserve the existing proportional edge band on the smaller canvas. */
++	fEdgePixels = SWEET_TOUCH_EDGE_PX * fPanelW / 1080;
+ 	setProperty("DisplayIntegrated", kOSBooleanTrue);
+-	setProperty("SurfaceWidth", (unsigned long long)(68 << 16), 32);	/* mm, 16.16 */
+-	setProperty("SurfaceHeight", (unsigned long long)(151 << 16), 32);
++	if (!jelly) {
++		setProperty("SurfaceWidth", (unsigned long long)(68 << 16), 32);
++		setProperty("SurfaceHeight", (unsigned long long)(151 << 16), 32);
++	}
+ 	gSweetTouch = this;
+ 	registerService();
+ 	IOLog("SWEET HID: touch registered\n");
++	if (jelly) jelly_touch_start();
+ 	return true;
+ }
+ 
+@@ -463,7 +477,7 @@
+ 	IOLockLock(fLock);
+ 	for (unsigned i = 0; i < SWEET_TOUCH_FINGERS; i++) {
+ 		bool down = (mask & (1u << i)) != 0;
+-		if (down && (x[i] < 0 || x[i] > 1079 || y[i] < 0 || y[i] > 2399)) {
++		if (down && (x[i] < 0 || x[i] >= fPanelW || y[i] < 0 || y[i] >= fPanelH)) {
+ 			IOLockUnlock(fLock);
+ 			return EINVAL;
+ 		}
+@@ -471,8 +485,8 @@
+ 		nextY[i] = down ? (IOFixed)(((int64_t)(y[i] + fOffY) << 16) / (fLogicalH - 1)) : fY[i];
+ 		edge[i] = fEdge[i];
+ 		if (down && !fDown[i]) {
+-			edge[i] = x[i] < SWEET_TOUCH_EDGE_PX || x[i] > 1079 - SWEET_TOUCH_EDGE_PX ||
+-			    y[i] < SWEET_TOUCH_EDGE_PX || y[i] > 2399 - SWEET_TOUCH_EDGE_PX;
++			edge[i] = x[i] < fEdgePixels || x[i] >= fPanelW - fEdgePixels ||
++			    y[i] < fEdgePixels || y[i] >= fPanelH - fEdgePixels;
+ 			changes[i] |= kIOHIDDigitizerEventIdentity;
+ 		}
+ 		if (down != fDown[i]) {
+--- a/bsd/conf/files.arm64
++++ b/bsd/conf/files.arm64
+@@ -23,3 +23,8 @@
+ bsd/dev/arm64/sdt_arm.c		optional config_dtrace
+ 
+ bsd/kern/bsd_stubs.c		standard
++
++# Original Jelly Star experiment; activation requires an explicit ADT node.
++bsd/dev/jellystar/chsc.c standard
++bsd/dev/jellystar/i2c.c standard
++bsd/dev/jellystar/touch.c standard

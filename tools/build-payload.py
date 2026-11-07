@@ -20,7 +20,7 @@ def module(name, path):
     return result
 
 
-def build_tree(source, board):
+def build_tree(source, board, display=False, touch=False):
     # Keep upstream's required SWEET matching ABI; publish the actual board.
     sys.path.insert(0, str(source / "x676c/tools"))
     mkadt = module("mtk_mkadt", source / "x676c/tools/mkadt.py")
@@ -70,6 +70,30 @@ def build_tree(source, board):
     for n in root.children:
         if n.name == "arm-io":
             n.children = [c for c in n.children if c.name == "gic"]
+            if display:
+                n.children.append(
+                    mkadt.node(
+                        "disp0",
+                        [
+                            (
+                                "compatible",
+                                b"unihertz,jellystar-framebuffer\0sweet,display\0",
+                            ),
+                            ("device_type", b"display-subsystem\0"),
+                            ("canvas-width", struct.pack("<I", mkadt.FB_W)),
+                            ("canvas-height", struct.pack("<I", mkadt.FB_H)),
+                        ],
+                    )
+                )
+    if touch:
+        root.children.append(
+            mkadt.node(
+                "jellystar-touch",
+                [
+                    ("compatible", b"unihertz,chsc5xxx\0"),
+                ],
+            )
+        )
     return adt.serialize(root)
 
 
@@ -79,6 +103,16 @@ def main():
     parser.add_argument("--init", type=Path, default=ROOT / "out/xnu/init/init")
     parser.add_argument("--source", type=Path, default=ROOT / "out/sources/HelioDarwin")
     parser.add_argument("--out", type=Path, default=ROOT / "out/xnu")
+    parser.add_argument(
+        "--display",
+        action="store_true",
+        help="opt in to Jelly CPU framebuffer presentation",
+    )
+    parser.add_argument(
+        "--touch",
+        action="store_true",
+        help="opt in to the CHSC/I2C experiment; MMIO and DMA when booted",
+    )
     args = parser.parse_args()
     source = args.source.resolve()
     pin = tomllib.loads((ROOT / "xnu/sources.toml").read_text())["helio"]
@@ -95,7 +129,7 @@ def main():
     boot = module("jelly_boot", ROOT / "tools/build-shim.py")
     args.out.mkdir(parents=True, exist_ok=True, mode=0o700)
     args.out.chmod(0o700)
-    tree = build_tree(source, boot.facts())
+    tree = build_tree(source, boot.facts(), args.display, args.touch)
     adt_path = args.out / "jellystar.adt"
     adt_path.write_bytes(tree)
     packer = module("mtk_payload", source / "x676c/tools/mkpayload.py")
@@ -114,6 +148,7 @@ def main():
     ):
         raise ValueError("payload memory differs from board facts")
     print(f"{payload}: {len(blob)} bytes; Jelly ADT + static init; NOT executed")
+    print(f"Opt-in services: display={args.display}, touch={args.touch}")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
 """Prepare pinned XNU sources and the Jelly Star patch stack; optionally build."""
 
 import argparse
+import difflib
 import os
 import shlex
 import shutil
@@ -21,6 +22,22 @@ def board_header(conf=None):
                 key, value = line.split("=", 1)
                 conf[key.strip()] = value.strip()
     values = {
+        "FB_SIZE": int(conf["soc_fb_reserved"], 0),
+        "TOUCH_I2C": int(conf["soc_touch_i2c"], 0),
+        "TOUCH_I2C_SIZE": int(conf["soc_touch_i2c_size"], 0),
+        "TOUCH_DMA": int(conf["soc_touch_dma"], 0),
+        "TOUCH_DMA_SIZE": int(conf["soc_touch_dma_size"], 0),
+        "TOUCH_CLOCK": int(conf["soc_touch_clock"], 0),
+        "TOUCH_IOCFG_LM": int(conf["soc_touch_iocfg_lm"], 0),
+        "TOUCH_GPIO": int(conf["soc_gpio"], 0),
+        "TOUCH_INFRA": int(conf["soc_infracfg_ao"], 0),
+        "TOUCH_TOPCKGEN": int(conf["soc_topckgen"], 0),
+        "TOUCH_SCL": int(conf["soc_touch_scl_gpio"], 0),
+        "TOUCH_SDA": int(conf["soc_touch_sda_gpio"], 0),
+        "TOUCH_ADDRESS": int(conf["soc_touch_addr"], 0),
+        "TOUCH_XRES": int(conf["soc_touch_xres"], 0),
+        "TOUCH_YRES": int(conf["soc_touch_yres"], 0),
+        "TOUCH_MAX": int(conf["soc_touch_max"], 0),
         "FB_PA": int(conf["soc_fb"], 0),
         "FB_WIDTH": int(conf["panel_width"], 0),
         "FB_HEIGHT": int(conf["panel_height"], 0),
@@ -92,6 +109,23 @@ def prepare(output, sources):
         "--- /dev/null\n+++ b/pexpert/pexpert/arm64/jellystar.h\n"
         f"@@ -0,0 +1,{len(header)} @@\n" + "".join(f"+{line}\n" for line in header)
     )
+    # Stage our original source, while the third-party port remains a pinned dependency.
+    device_patch = []
+    device_files = git(
+        ROOT, "ls-files", "--cached", "--others", "--exclude-standard", "xnu/jellystar"
+    ).splitlines()
+    for name in device_files:
+        path = ROOT / name
+        target = "b/bsd/dev/jellystar/" + path.name
+        device_patch.extend(
+            difflib.unified_diff(
+                [],
+                path.read_text().splitlines(True),
+                fromfile="/dev/null",
+                tofile=target,
+            )
+        )
+    (patches / "0212-jellystar-sources.patch").write_text("".join(device_patch))
     build = git(builder, "show", "HEAD:build.sh")
     build = build.replace(
         'ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"',
