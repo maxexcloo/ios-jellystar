@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check devices/jellystar/soc.args against the phone's own device tree.
+"""Check shim/soc.args against the phone's own device tree.
 
   check-facts.py [--fw DIR] [--conf FILE]
 
@@ -16,9 +16,10 @@ Get the inputs first:  tools/extract-dt.py vendor_boot.img dtbo.img --out fw
 import argparse
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import fdt  # noqa: E402
+import fdt
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -221,10 +222,10 @@ def load(fw):
     for name, path in paths.items():
         if not os.path.exists(path):
             sys.exit(
-                "check-facts: missing %s (run tools/extract-dt.py ... --out fw)" % path
+                f"check-facts: missing {path} (run tools/extract-dt.py ... --out fw)"
             )
         trees[name] = []
-        for _label, blob in fdt.blobs(open(path, "rb").read()):
+        for _label, blob in fdt.blobs(Path(path).read_bytes()):
             table = {}
             for node, prop, value in fdt.walk(blob):
                 table.setdefault(node, {})[prop] = value
@@ -241,7 +242,7 @@ def prop_of(trees, src, node, prop):
 
 def parse_conf(path):
     facts = {}
-    for raw in open(path, encoding="utf-8"):
+    for raw in Path(path).read_text().splitlines():
         line = raw.split("#", 1)[0].strip()
         if not line or "=" not in line:
             continue
@@ -277,12 +278,19 @@ def derived_value(trees, key):
         value = prop_of(trees, "live", "/chosen", "bootargs")
         if value is None:
             return None
-        args = dict(token.split("=", 1) for token in value.rstrip(b"\0").decode().split()
-                    if token.startswith("ramoops.") and "=" in token)
+        args = dict(
+            token.split("=", 1)
+            for token in value.rstrip(b"\0").decode().split()
+            if token.startswith("ramoops.") and "=" in token
+        )
         size = int(args["ramoops.pmsg_size"], 0)
         if key == "soc_pmsg_size":
             return size
-        return int(args["ramoops.mem_address"], 0) + int(args["ramoops.mem_size"], 0) - size
+        return (
+            int(args["ramoops.mem_address"], 0)
+            + int(args["ramoops.mem_size"], 0)
+            - size
+        )
     rank0 = prop_of(trees, "live", "/reserved-memory/mblock-1-dramc-rk0", "reg")
     rank1 = prop_of(trees, "live", "/reserved-memory/mblock-2-dramc-rk1", "reg")
     if rank0 is None or rank1 is None:
@@ -291,7 +299,7 @@ def derived_value(trees, key):
     if key == "soc_dram_kernel_base":
         return base
     # Preserve the reference's conservative 64 KiB alignment below the training page.
-    return (int.from_bytes(rank1[:8], "big") - base) & ~0xffff
+    return (int.from_bytes(rank1[:8], "big") - base) & ~0xFFFF
 
 
 def main(argv):
@@ -299,7 +307,7 @@ def main(argv):
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     ap.add_argument("--fw", default=os.path.join(ROOT, "fw"))
-    ap.add_argument("--conf", default=os.path.join(ROOT, "devices/jellystar/soc.args"))
+    ap.add_argument("--conf", default=os.path.join(ROOT, "shim/soc.args"))
     args = ap.parse_args(argv)
 
     trees = load(args.fw)
@@ -309,43 +317,48 @@ def main(argv):
 
     for key in sorted(facts):
         expected = facts[key]
-        if key in ("soc_pmsg", "soc_pmsg_size", "soc_dram_kernel_base", "soc_dram_kernel_size"):
+        if key in (
+            "soc_pmsg",
+            "soc_pmsg_size",
+            "soc_dram_kernel_base",
+            "soc_dram_kernel_size",
+        ):
             got = derived_value(trees, key)
             if got is None:
-                print("%-22s SKIP    requires the saved live DT" % key)
+                print(f"{key!s:<22} SKIP    requires the saved live DT")
                 skipped += 1
             elif got != int(expected, 0):
-                print("%-22s MISMATCH derived=%#x conf=%s" % (key, got, expected))
+                print(f"{key!s:<22} MISMATCH derived={got:#x} conf={expected!s}")
                 bad += 1
             else:
-                print("%-22s ok      %#x (derived from live DT)" % (key, got))
+                print(f"{key!s:<22} ok      {got:#x} (derived from live DT)")
             continue
         if key in NOT_IN_DT:
-            print("%-22s SKIP    %s" % (key, NOT_IN_DT[key]))
+            print(f"{key!s:<22} SKIP    {NOT_IN_DT[key]!s}")
             skipped += 1
             continue
         if key == "soc_cpu_mpidr":
             continue  # checked below, as a set
         rule = RULES.get(key)
         if rule is None:
-            print("%-22s SKIP    no rule in check-facts.py" % key)
+            print(f"{key!s:<22} SKIP    no rule in check-facts.py")
             skipped += 1
             continue
         src, node, prop, kind, index = rule
         if src not in trees:
-            print("%-22s SKIP    requires the saved live DT" % key)
+            print(f"{key!s:<22} SKIP    requires the saved live DT")
             skipped += 1
             continue
         value = prop_of(trees, src, node, prop)
         if value is None:
-            print("%-22s MISSING %s %s" % (key, node, prop))
+            print(f"{key!s:<22} MISSING {node!s} {prop!s}")
             bad += 1
             continue
         try:
             got = got_for(value, kind, index)
         except IndexError:
             print(
-                "%-22s MISSING %s %s too short for index %r" % (key, node, prop, index)
+                f"{key!s:<22} MISSING {node!s} {prop!s} too short for index {index!r}"
             )
             bad += 1
             continue
@@ -355,8 +368,7 @@ def main(argv):
             got = [x for x in got if x in want]
         if got != want and key in KNOWN_DIVERGENCE:
             print(
-                "%-22s PHONE   conf=%s dt=%s  (%s)"
-                % (
+                "{!s:<22} PHONE   conf={!s} dt={!s}  ({!s})".format(
                     key,
                     ",".join(hex(x) for x in want),
                     ",".join(hex(x) for x in got),
@@ -366,12 +378,13 @@ def main(argv):
             diverged.append(key)
         elif got != want:
             print(
-                "%-22s MISMATCH dt=%s conf=%s"
-                % (key, ",".join(hex(x) for x in got), ",".join(hex(x) for x in want))
+                "{!s:<22} MISMATCH dt={!s} conf={!s}".format(
+                    key, ",".join(hex(x) for x in got), ",".join(hex(x) for x in want)
+                )
             )
             bad += 1
         else:
-            print("%-22s ok      %s" % (key, ",".join(hex(x) for x in got)))
+            print("{!s:<22} ok      {!s}".format(key, ",".join(hex(x) for x in got)))
 
     # CPU topology is a set, not a single cell: the plan must not claim a core
     # the tree does not have, or drop one it does.
@@ -383,8 +396,7 @@ def main(argv):
     want_cpus = want_list(facts["soc_cpu_mpidr"])
     if sorted(cpus) != sorted(want_cpus):
         print(
-            "%-22s MISMATCH dt=%s conf=%s"
-            % (
+            "{!s:<22} MISMATCH dt={!s} conf={!s}".format(
                 "soc_cpu_mpidr",
                 ",".join(hex(x) for x in sorted(cpus)),
                 ",".join(hex(x) for x in want_cpus),
@@ -393,8 +405,7 @@ def main(argv):
         bad += 1
     else:
         print(
-            "%-22s ok      %d cores (%d A55 + %d A76)"
-            % (
+            "{!s:<22} ok      {:d} cores ({:d} A55 + {:d} A76)".format(
                 "soc_cpu_mpidr",
                 len(cpus),
                 sum(1 for c in cpus if c < 0x600),
@@ -404,11 +415,10 @@ def main(argv):
 
     print()
     if bad:
-        print("%d fact(s) disagree with the device tree, %d skipped" % (bad, skipped))
+        print(f"{bad:d} fact(s) disagree with the device tree, {skipped:d} skipped")
         return 1
     print(
-        "all checkable facts match the device tree (%d skipped: not in the DT)"
-        % skipped
+        f"all checkable facts match the device tree ({skipped:d} skipped: not in the DT)"
     )
     return 0
 

@@ -23,6 +23,7 @@ import argparse
 import os
 import struct
 import sys
+from pathlib import Path
 
 VNDRBOOT = b"VNDRBOOT"
 DTBO_MAGIC = 0xD7B7AB1E
@@ -36,15 +37,15 @@ def page_align(x, page):
 def parse_vendor_boot(data):
     """Return (dtb_bytes, header_dict) for a vendor_boot header v3/v4 image."""
     if data[:8] != VNDRBOOT:
-        raise SystemExit("not a vendor_boot image (magic %r)" % data[:8])
+        raise SystemExit(f"not a vendor_boot image (magic {data[:8]!r})")
     # vendor_boot_img_hdr_v3/v4: magic, header_version, page_size,
     # kernel_addr, ramdisk_addr, vendor_ramdisk_size, cmdline[2048],
     # tags_addr, name[16], header_size, dtb_size, dtb_addr
     version, page = struct.unpack_from("<II", data, 8)
     if version < 3:
-        raise SystemExit("vendor_boot header v%d has no DTB" % version)
+        raise SystemExit(f"vendor_boot header v{version:d} has no DTB")
     ramdisk_size = struct.unpack_from("<I", data, 24)[0]
-    header_size, dtb_size = struct.unpack_from("<II", data, 2096)
+    _header_size, dtb_size = struct.unpack_from("<II", data, 2096)
     dtb_addr = struct.unpack_from("<Q", data, 2104)[0]
     cmdline = data[28 : 28 + 2048].split(b"\0")[0].decode("utf-8", "replace")
 
@@ -54,7 +55,7 @@ def parse_vendor_boot(data):
     window = data[dtb_off : dtb_off + page + dtb_size + page]
     start = window.find(FDT_MAGIC.to_bytes(4, "big"))
     if start < 0:
-        raise SystemExit("no FDT at %#x in the vendor ramdisk tail" % dtb_off)
+        raise SystemExit(f"no FDT at {dtb_off:#x} in the vendor ramdisk tail")
     dtb = window[start : start + dtb_size]
     return dtb, {
         "header_version": version,
@@ -87,14 +88,13 @@ def main(argv):
     ap.add_argument("--out", default="fw")
     args = ap.parse_args(argv)
 
-    dtb, hdr = parse_vendor_boot(open(args.vendor_boot, "rb").read())
+    dtb, hdr = parse_vendor_boot(Path(args.vendor_boot).read_bytes())
     os.makedirs(args.out, exist_ok=True)
     path = os.path.join(args.out, "jellystar.dtb")
     with open(path, "wb") as f:
         f.write(dtb)
     print(
-        "%s: %d bytes (header v%d, page %d, ramdisk %d, dtb_addr %#x)"
-        % (
+        "{!s}: {:d} bytes (header v{:d}, page {:d}, ramdisk {:d}, dtb_addr {:#x})".format(
             path,
             len(dtb),
             hdr["header_version"],
@@ -103,20 +103,21 @@ def main(argv):
             hdr["dtb_addr"],
         )
     )
-    print("fdt: %r" % describe(dtb))
+    print(f"fdt: {describe(dtb)!r}")
 
     if args.dtbo:
-        blob = open(args.dtbo, "rb").read()
+        blob = Path(args.dtbo).read_bytes()
         if int.from_bytes(blob[:4], "big") != DTBO_MAGIC:
             raise SystemExit(
-                "%s: not a DTBO (magic %#x)"
-                % (args.dtbo, int.from_bytes(blob[:4], "big"))
+                "{}: not a DTBO (magic {:#x})".format(
+                    args.dtbo, int.from_bytes(blob[:4], "big")
+                )
             )
         dst = os.path.join(args.out, "dtbo.img")
         with open(dst, "wb") as f:
             f.write(blob)
         count = int.from_bytes(blob[16:20], "big")
-        print("%s: %d bytes, %d overlay entries" % (dst, len(blob), count))
+        print(f"{dst!s}: {len(blob):d} bytes, {count:d} overlay entries")
     return 0
 
 

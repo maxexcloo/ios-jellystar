@@ -17,8 +17,12 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - name: Check Host Tools
-        run: python3 tools/check.py
+      - name: Set Up Shared Tools & Tasks
+        uses: maxexcloo/dotfiles/.github/actions/mise@main
+        with:
+          tools: actionlint node@24 npm:renovate oxfmt ruff shellcheck
+      - name: Run Checks
+        run: mise run check

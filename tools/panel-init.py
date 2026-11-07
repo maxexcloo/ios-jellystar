@@ -24,6 +24,7 @@ The module is in vendor_boot's vendor ramdisk, not /vendor/lib/modules:
 import argparse
 import struct
 import sys
+from pathlib import Path
 
 # ELF64 little-endian aarch64
 SHT_SYMTAB = 2
@@ -93,18 +94,18 @@ def sections(data):
         flags, addr, off, size = struct.unpack_from("<QQQQ", data, sh + 8)
         link, info, align, entsize = struct.unpack_from("<IIQQ", data, sh + 40)
         out.append(
-            dict(
-                name_off=name,
-                type=stype,
-                flags=flags,
-                addr=addr,
-                off=off,
-                size=size,
-                link=link,
-                info=info,
-                align=align,
-                entsize=entsize,
-            )
+            {
+                "name_off": name,
+                "type": stype,
+                "flags": flags,
+                "addr": addr,
+                "off": off,
+                "size": size,
+                "link": link,
+                "info": info,
+                "align": align,
+                "entsize": entsize,
+            }
         )
     strtab_off = out[shstrndx]["off"]
     for s in out:
@@ -123,7 +124,7 @@ def objects(data, secs, want_prefix):
     found = []
     n = symtab["size"] // symtab["entsize"]
     for i in range(n):
-        st_name, st_info, st_other, st_shndx, st_value, st_size = struct.unpack_from(
+        st_name, st_info, _st_other, st_shndx, st_value, st_size = struct.unpack_from(
             "<IBBHQQ", data, symtab["off"] + i * symtab["entsize"]
         )
         if st_info & 0xF != STT_OBJECT or st_shndx == 0 or st_shndx >= len(secs):
@@ -132,7 +133,7 @@ def objects(data, secs, want_prefix):
         name = data[strtab["off"] + st_name : end].decode()
         if name.startswith(want_prefix):
             sec = secs[st_shndx]
-            found.append(dict(name=name, sec=sec, value=st_value, size=st_size))
+            found.append({"name": name, "sec": sec, "value": st_value, "size": st_size})
     return found
 
 
@@ -184,7 +185,7 @@ def main():
     ap.add_argument("--raw", action="store_true", help="also print raw payload bytes")
     a = ap.parse_args()
 
-    data = open(a.ko, "rb").read()
+    data = Path(a.ko).read_bytes()
     secs = sections(data)
 
     prefix = a.symbol
@@ -197,17 +198,17 @@ def main():
         prefix = prefix or "ST7701S_Z30043_init.d"
 
     seq = decode_sequence(data, secs, prefix)
-    print("== init sequence (%d objects, symbol prefix %r)" % (len(seq), prefix))
+    print(f"== init sequence ({len(seq):d} objects, symbol prefix {prefix!r})")
     if not seq:
         print("  none found. Wrong module or a stripped build?")
         return 1
     for name, cmd, payload in seq:
         desc = DCS.get(cmd, "")
         if payload:
-            body = " ".join("%02x" % b for b in payload)
-            print("  %-28s %02x  %-22s  %s" % (name, cmd, desc, body))
+            body = " ".join(f"{b:02x}" for b in payload)
+            print(f"  {name!s:<28} {cmd:02x}  {desc!s:<22}  {body!s}")
         else:
-            print("  %-28s %02x  %s" % (name, cmd, desc))
+            print(f"  {name!s:<28} {cmd:02x}  {desc!s}")
 
     print()
     print("== timing table")
@@ -218,7 +219,7 @@ def main():
     for sec, off, clock in hits:
         base = sec["off"] + off
         v = struct.unpack_from("<" + "H" * 18, data, base)
-        print("  %s+%d: %s" % (sec["name"], off, " ".join(str(x) for x in v)))
+        print("  {!s}+{:d}: {!s}".format(sec["name"], off, " ".join(str(x) for x in v)))
         # Field order, established by checking that clock/(htotal*vtotal) equals the
         # refresh rate the phone reports. Labelled a derivation, not a datasheet.
         hactive, vactive = v[2], v[0]
@@ -226,15 +227,15 @@ def main():
         # vactive is repeated at v[11] before the vertical group, which is why the
         # vertical fields start at 12 rather than 10.
         vs, ve, vt = v[12], v[13], v[14]
-        print("    hactive=%d vactive=%d clock=%d kHz" % (hactive, vactive, clock))
+        print(f"    hactive={hactive:d} vactive={vactive:d} clock={clock:d} kHz")
         print(
-            "    h: bp=%d sync=%d fp=%d total=%d" % (hs - hactive, he - hs, ht - he, ht)
+            f"    h: bp={hs - hactive:d} sync={he - hs:d} fp={ht - he:d} total={ht:d}"
         )
         print(
-            "    v: bp=%d sync=%d fp=%d total=%d" % (vs - vactive, ve - vs, vt - ve, vt)
+            f"    v: bp={vs - vactive:d} sync={ve - vs:d} fp={vt - ve:d} total={vt:d}"
         )
         hz = clock * 1000.0 / (ht * vt)
-        print("    refresh = %d kHz / (%d * %d) = %.2f Hz" % (clock, ht, vt, hz))
+        print(f"    refresh = {clock:d} kHz / ({ht:d} * {vt:d}) = {hz:.2f} Hz")
         if abs(hz - 60.0) > 0.05:
             print("    NOTE: not 60 Hz -- check the field order before using this")
     return 0

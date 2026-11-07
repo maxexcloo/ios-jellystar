@@ -1,49 +1,72 @@
 # iOS Jelly Star
 
-Experimental iOS 16 / XNU bring-up for the Unihertz Jelly Star (MT6789 / Helio G99). **No custom code has executed on this phone.** [device.conf](devices/jellystar/device.conf) records subsystem status; [soc.args](devices/jellystar/soc.args) owns the hardware facts and their sources.
+Experimental iOS 16 / XNU bring-up for the Unihertz Jelly Star (MT6789 / Helio G99). Based on the same-SoC [HelioDarwin](https://github.com/squeeeezy/HelioDarwin) port.
 
-The closest base is [HelioDarwin](https://github.com/squeeeezy/HelioDarwin), whose same-SoC phone reaches iOS userspace with UFS storage and display. Its GPU job completion does not establish correctly accelerated UI. Jelly needs its own ST7701S video-mode panel and Chipsea `chsc5xxx` touch drivers. Firmware embedded in the touch module does not prove it must be uploaded on every reset. See [CREDITS.md](CREDITS.md) for references and licences.
+## Status
+
+**No custom code has executed on the local phone.** The Android-default chainloader builds and passes offline checks. It does not contain an XNU payload yet.
+
+| Area           | Evidence & Remaining Work                                                                                |
+| -------------- | -------------------------------------------------------------------------------------------------------- |
+| Boot           | The slot-B attempt could not execute; Android-default v4 chainloader built, LK loading/fallback untested |
+| Display        | ST7701S panel and timings identified; diagnostic colour fill prepared, no XNU driver                     |
+| Touch          | Chipsea `chsc5xxx` identified; no XNU driver; reset-time firmware requirements unresolved                |
+| XNU & storage  | Same-SoC reference exists; kernel/ADT port and root layout not integrated here                           |
+| Other hardware | No locally established GPU, networking, audio, camera, sensors or power-management support               |
 
 ## Build & Check
 
-Host tools use Python's standard library and a C compiler. The chainloader build also needs LLVM (`clang`, `ld.lld`, `llvm-objcopy`, `llvm-nm`, `llvm-readelf`). Set `CC`, `LD`, `OBJCOPY`, `NM` and `READELF` if those tools are not on PATH; the builder also recognises Homebrew's keg-only LLVM directory.
+Host tools use Python's standard library and a C compiler. Native builds need LLVM (`clang`, `ld.lld`, `llvm-objcopy`, `llvm-nm`, `llvm-readelf`). The builder recognises Homebrew's keg-only LLVM directory; `CC`, `LD`, `OBJCOPY`, `NM` and `READELF` can select explicit executables.
 
 ```sh
 mise run check
 mise run build -- recon/backup/boot_a.img
 ```
 
-The build produces `out/chainboot/chainboot.img`. It embeds the complete Android Image at a 2 MiB boundary, preserving its text offset, all appended data, the boot header's other fields and the generic ramdisk. The modified kernel invalidates the old GKI signature and AVB footer, which are omitted. `vendor_boot`, DTBO and bootloader partitions are not involved in this offline build.
+The output is `out/chainboot/chainboot.img`. The builder embeds the complete saved Android Image at an aligned offset, preserves its appended data, generic ramdisk and unaffected boot-v4 fields, and omits invalidated signatures. Tests cover image preservation, deterministic packing, one-shot triggers and live framebuffer selection. Offline checks do not establish Android fallback.
 
-The default loader simply enters Android. A separate diagnostic build enables a one-shot `JELLYSTAR:DIAGNOSTIC` marker in the ramoops pmsg ring:
+## Device Workflow
+
+The next hardware milestone is the Android-only chainloader. Once Android fallback is observed, build the optional one-shot colour diagnostic:
 
 ```sh
 mise run build -- recon/backup/boot_a.img --out out/diagnostic --diagnostic
 ```
 
-When triggered, it consumes the marker before drawing a green frame, waits five seconds and continues into Android. It only draws when the live DT's framebuffer address matches its reservation and has room for the panel. The pmsg location is derived from the saved Linux 5.10 ramoops layout, including its default ftrace page; trigger survival and the persistent header still need hardware validation. No XNU payload is included yet.
+A `JELLYSTAR:DIAGNOSTIC` marker in the pmsg ring selects the diagnostic. It consumes the marker, draws within the live framebuffer reservation, waits five seconds and continues into Android. The persistent-ring location is derived from Linux 5.10 and the saved live boot arguments; trigger survival needs hardware validation. No device command is supplied before the boot/recovery experiment is reviewed with the phone present.
 
-Checks cover boot-image preservation, deterministic packing, trigger consumption across ring wrap, rejection of unrecorded triggers and live framebuffer selection. Local builds have round-tripped the saved Android kernel and ramdisk. **These checks do not prove LK loading or Android fallback.**
+**Recovery:**
 
-## Hardware Boundary
+Slot A is this phone's only bootable Android chain. Every slot-B boot-chain partition was zero when measured; flashing `boot_b` alone fails in the preloader and eventually falls back to A. Do not provision slot B as a shortcut.
 
-The attempted `boot_b` shim never executed: every slot-B boot-chain partition was zero, so the preloader failed and eventually returned to A. Flashing `boot_b` alone cannot fix that. LK's fastboot transfers time out on this macOS host; Android fastbootd works but cannot perform `fastboot boot`. No usable RAM-only boot route has been demonstrated.
+LK fastboot transfers time out on this macOS host. Android fastbootd works, but neither path supports `fastboot boot`, so no temporary RAM-only test route is established.
 
-The next device experiment is the Android-only chainloader, followed by the one-shot diagnostic after Android fallback is observed. The [HakiOS MT6768 loader](https://github.com/oosexgang/hakios-mt6768) is the precedent for chaining Android; its addresses, eMMC driver and boot-v2 packer do not apply directly here.
+Before a `boot_a` experiment, retain the original boot image and verified backups of `persist`, `nvdata`, `nvcfg`, `nvram`, `proinfo` and `sec1`, and obtain Android 16 stock recovery firmware. The chainloader's Android fallback still needs a first hardware test. Restoring the saved `boot_a` through working fastbootd is the intended rollback while Android remains reachable.
 
-Before any `boot_a` experiment, have the original boot image, verified calibration backups and Android 16 stock recovery firmware available. Slot A is the only bootable slot. Do not relock the bootloader or use SP Flash Tool's “Format All + Download”; Android 13 rollback is blocked. No flashing command is supplied until the experiment and recovery path are reviewed with the phone present.
+The documented unbrick path is SP Flash Tool v6 with matching Android 16 stock firmware, using “Firmware Upgrade” or “Download Only”. The original Android 13 firmware is blocked by anti-rollback. Never use “Format All + Download”, which destroys calibration/IMEI, and never relock modified software.
 
-After loader execution is proved, the remaining sequence is the HelioDarwin XNU/ADT port, storage/root layout, panel scanout and touch. Networking, GPU UI, audio, cameras and other peripherals need separate driver work and hardware evidence. The small screen also needs actual UIKit layout testing.
+A triggered diagnostic consumes its marker before drawing and then continues to Android. If the phone hangs before the marker is consumed, a forced restart can repeat the experiment; one-shot behaviour is not a recovery guarantee. Do not flash until the current recovery route is reviewed with the phone present.
 
-## Hardware Inputs
+## Inputs Kept Locally
 
-Vendor images, device dumps and Apple's material stay local. To extract and check the supplied vendor DTs:
+Vendor images and modules stay in `fw/` or `recon/`; `out/` contains generated images. Apple's files, partition backups and phone logs are not committed. The board facts and their sources live in [shim/soc.args](shim/soc.args).
 
 ```sh
 python3 tools/extract-dt.py vendor_boot.img dtbo.img --out fw
 python3 tools/check-facts.py
 ```
 
-`fw/jellystar.dtb` and `fw/dtbo.img` come from the matching vendor images. `recon/live.dtb` is the captured DT that LK actually passed; it contains private device identifiers and is never committed. The packaged DT's panel name/framebuffer differs from this phone, so the checker reports those discrepancies rather than treating the packaged values as authoritative.
+The checker reads `fw/jellystar.dtb`, `fw/dtbo.img` and, when present, the saved `recon/live.dtb`. The packaged DT disagrees with the phone's framebuffer/panel information; the live reservation is authoritative. `tools/recon.sh` collects Android observations, and `tools/unpack-vendor-ramdisk.sh` plus `tools/panel-init.py` recover the vendor panel data.
 
-`tools/recon.sh` collects read-only Android observations when explicitly requested. `tools/unpack-vendor-ramdisk.sh` extracts local vendor modules, and `tools/panel-init.py` decodes the ST7701S init objects and timings. These are research inputs, not working XNU drivers.
+## Credits & Licences
+
+Original tools and Jelly Star work use the repository's [MIT licence](LICENSE). Apple, Unihertz and MediaTek binaries are supplied locally and are not redistributed.
+
+- [HelioDarwin](https://github.com/squeeeezy/HelioDarwin): XNU on the MT6789 Infinix Note 12 2023; SoC/driver reference.
+- [KLiOS716](https://github.com/lib-fluff-so/KLiOS716): another MT6789 port and boot reference; its software renderer is not GPU-accelerated UI evidence.
+- [HakiOS MT6768](https://github.com/oosexgang/hakios-mt6768): Android-default MediaTek chainloader precedent; different SoC, storage and boot-image version. No loader code is vendored here.
+- [ios-sweet](https://github.com/dipa-studio/ios-sweet) and [ios-topaz](https://github.com/MakrSas/ios-topaz): upstream XNU-on-Android work. Topaz is Qualcomm SM6225, not MT6789.
+- [Jelly Star LineageOS](https://github.com/osquera/lineageos_unihertz_jellystar): vendor-image/recovery references.
+- [Linux AArch64 boot protocol](https://docs.kernel.org/arch/arm64/booting.html), [Linux 5.10 ramoops](https://github.com/torvalds/linux/blob/v5.10/fs/pstore/ram.c) and [AOSP boot headers](https://source.android.com/docs/core/architecture/bootloader/boot-image-header): format and handoff references; no source copied.
+
+Apple's XNU uses APSL 2.0. Upstream projects retain their own licences; this repository currently contains no XNU patch series or imported kernel drivers.

@@ -17,6 +17,7 @@ big-endian: a `reg` of 8 bytes is (address, size) u32 pairs.
 
 import os
 import sys
+from pathlib import Path
 
 MAGIC = 0xD00DFEED
 DTBO_MAGIC = 0xD7B7AB1E
@@ -34,7 +35,7 @@ def blobs(data):
         yield "dtb", data
         return
     if magic != DTBO_MAGIC:
-        raise SystemExit("not a DTB or DTBO (magic %#x)" % magic)
+        raise SystemExit(f"not a DTB or DTBO (magic {magic:#x})")
     # dt_table_header: magic, total_size, header_size, entry_size, entry_count,
     # entries_offset, page_size, version
     hdr = [int.from_bytes(data[i * 4 : i * 4 + 4], "big") for i in range(8)]
@@ -44,7 +45,7 @@ def blobs(data):
         size, dtb_off = (
             int.from_bytes(data[off + 4 * j : off + 4 * j + 4], "big") for j in (0, 1)
         )
-        label = "dtbo[%d]" % i
+        label = f"dtbo[{i:d}]"
         # AOSP mkdtimg writes absolute offsets from the start of the image;
         # some vendors write them relative to the end of the table header.
         # Trust the magic, not the spec.
@@ -57,7 +58,7 @@ def blobs(data):
         yield label, body[start:] if start > 0 else body
     if total > len(data):
         print(
-            "warning: DTBO claims %d bytes, file has %d" % (total, len(data)),
+            f"warning: DTBO claims {total:d} bytes, file has {len(data):d}",
             file=sys.stderr,
         )
 
@@ -99,7 +100,7 @@ def walk(dtb):
         elif tok == FDT_NOP:
             continue
         else:
-            raise SystemExit("bad FDT token %#x at %d" % (tok, pos - 4))
+            raise SystemExit(f"bad FDT token {tok:#x} at {pos - 4:d}")
 
 
 def fmt(value):
@@ -125,13 +126,13 @@ def u32s(value, width=4):
 def cmd_show(argv):
     path_prefixes = argv[1:]
     for filename in argv[:1]:
-        data = open(filename, "rb").read()
+        data = Path(filename).read_bytes()
         for label, dtb in blobs(data):
-            print("##### %s" % label)
+            print(f"##### {label}")
             for path, name, value in walk(dtb):
                 if path_prefixes and not any(path.startswith(p) for p in path_prefixes):
                     continue
-                print("%-60s %-26s %s" % (path, name, fmt(value)))
+                print(f"{path!s:<60} {name!s:<26} {fmt(value)!s}")
 
 
 def cmd_get(argv):
@@ -140,14 +141,14 @@ def cmd_get(argv):
     filename = argv[0]
     want = argv[1].rstrip("/") or "/"
     prop = argv[2] if len(argv) > 2 else None
-    data = open(filename, "rb").read()
+    data = Path(filename).read_bytes()
     hit = False
     for _label, dtb in blobs(data):
         for path, name, value in walk(dtb):
             if path != want or (prop and name != prop):
                 continue
             hit = True
-            print("%-26s %s" % (name, fmt(value)) if not prop else fmt(value))
+            print(f"{name!s:<26} {fmt(value)!s}" if not prop else fmt(value))
     if not hit:
         return 1
     return 0
@@ -157,7 +158,7 @@ def cmd_nodes(argv):
     if not argv:
         raise SystemExit(__doc__)
     needle = argv[1] if len(argv) > 1 else ""
-    data = open(argv[0], "rb").read()
+    data = Path(argv[0]).read_bytes()
     for _label, dtb in blobs(data):
         seen = []
         for path, _name, _value in walk(dtb):

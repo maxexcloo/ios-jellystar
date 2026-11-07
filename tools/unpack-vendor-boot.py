@@ -16,6 +16,7 @@ import argparse
 import os
 import struct
 import sys
+from pathlib import Path
 
 MAGIC = b"VNDRBOOT"
 
@@ -24,11 +25,11 @@ def split(path, out):
     with open(path, "rb") as f:
         hdr = f.read(4096)
         if hdr[:8] != MAGIC:
-            sys.exit("not a vendor_boot image (magic %r)" % hdr[:8])
+            sys.exit(f"not a vendor_boot image (magic {hdr[:8]!r})")
         (version,) = struct.unpack_from("<I", hdr, 8)
         if version < 3:
             sys.exit(
-                "header v%d has no vendor ramdisk table; only v3/v4 handled" % version
+                f"header v{version:d} has no vendor ramdisk table; only v3/v4 handled"
             )
         (page,) = struct.unpack_from("<I", hdr, 12)
         (vrs,) = struct.unpack_from("<I", hdr, 24)
@@ -56,9 +57,9 @@ def split(path, out):
         table = f.read(table_size)
 
     os.makedirs(out, exist_ok=True)
-    open(os.path.join(out, "vendor_ramdisk.bin"), "wb").write(ramdisk)
-    open(os.path.join(out, "vendor_boot.dtb"), "wb").write(dtb)
-    open(os.path.join(out, "vendor_ramdisk_table.bin"), "wb").write(table)
+    (Path(out) / "vendor_ramdisk.bin").write_bytes(ramdisk)
+    (Path(out) / "vendor_boot.dtb").write_bytes(dtb)
+    (Path(out) / "vendor_ramdisk_table.bin").write_bytes(table)
     info["ramdisk_lz4_legacy"] = ramdisk[:4] == bytes.fromhex("02214c18")
     return info
 
@@ -72,8 +73,8 @@ def main():
     out = a.out or os.path.dirname(os.path.abspath(a.image))
     info = split(a.image, out)
     for k, v in info.items():
-        print("%-32s %s" % (k, hex(v) if isinstance(v, int) else v))
-    print("wrote %s/{vendor_ramdisk.bin,vendor_boot.dtb}" % out)
+        print(f"{k!s:<32} {hex(v) if isinstance(v, int) else v!s}")
+    print(f"wrote {out}/{{vendor_ramdisk.bin,vendor_boot.dtb}}")
 
 
 if __name__ == "__main__":

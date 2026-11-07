@@ -58,11 +58,15 @@ echo
 echo "== memory"
 echo "  /memory/reg: $(sh_ 'od -An -tx1 -v /proc/device-tree/memory/reg' | tr -d ' \n')"
 echo "  MemTotal:    $(sh_ 'grep MemTotal /proc/meminfo' | tr -s ' ')"
+# These single-quoted programs run on the phone, not in the host shell.
+# shellcheck disable=SC2016
 cap reserved-memory 'for d in /proc/device-tree/reserved-memory/*/; do printf "%-40s " "$(basename "$d")"; od -An -tx1 -v "$d/reg" 2>/dev/null | tr -d "\n "; echo; done'
+# shellcheck disable=SC2016
 cap chosen 'for f in /proc/device-tree/chosen/*; do printf "%-32s " "$(basename "$f")"; od -An -tx1 -v "$f" 2>/dev/null | tr -d "\n "; echo; done'
 
 echo
 echo "== cpus"
+# shellcheck disable=SC2016
 sh_ 'for c in /sys/devices/system/cpu/cpu[0-9]; do printf "%-5s core_id=%s capacity=%s\n" $(basename $c) $(cat $c/topology/core_id) $(cat $c/cpu_capacity); done' |
 	sed 's/^/  /'
 
@@ -73,4 +77,4 @@ cap mounts 'mount | grep -iE "userdata|super|metadata"'
 
 echo
 echo "done. Review $OUT/ before committing anything: the live DT has the serial."
-echo "next: python3 tools/check-facts.py   (then fill any PHONE/MISSING rows in devices/jellystar/soc.args)"
+echo "next: python3 tools/check-facts.py   (then fill any PHONE/MISSING rows in shim/soc.args)"

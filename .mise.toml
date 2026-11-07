@@ -1,5 +1,14 @@
 [tasks.build]
-run = "python3 shim/build-shim.py"
+run = "python3 tools/build-shim.py"
 
 [tasks.check]
 run = "python3 tools/check.py"
+depends = [
+  "check:actions",
+  "check:mise",
+  "check:oxfmt",
+  "check:python",
+  "check:shell",
+  "check:updates",
+  "check:whitespace",
+]

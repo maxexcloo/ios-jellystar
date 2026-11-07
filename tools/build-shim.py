@@ -4,10 +4,10 @@
 import argparse
 import gzip
 import os
-from pathlib import Path
 import shutil
 import struct
 import subprocess
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 PAGE = 4096
@@ -28,7 +28,9 @@ def boot_parts(image):
     ramdisk_offset = PAGE + align(kernel_size)
     if ramdisk_offset + ramdisk_size > len(image):
         raise ValueError("truncated kernel or ramdisk")
-    return image[PAGE:PAGE + kernel_size], image[ramdisk_offset:ramdisk_offset + ramdisk_size]
+    return image[PAGE : PAGE + kernel_size], image[
+        ramdisk_offset : ramdisk_offset + ramdisk_size
+    ]
 
 
 def android_image(kernel):
@@ -37,7 +39,9 @@ def android_image(kernel):
         raise ValueError("expected a gzip or raw AArch64 Linux Image")
     offset, size, flags = struct.unpack_from("<3Q", raw, 8)
     if not flags & 8 or flags & 1 or not size:
-        raise ValueError("Android Image must be little-endian and support placement anywhere")
+        raise ValueError(
+            "Android Image must be little-endian and support placement anywhere"
+        )
     if offset >= ALIGNMENT or offset % PAGE:
         raise ValueError("unsupported Android Image text_offset")
     return raw, offset, max(size, len(raw))
@@ -50,14 +54,23 @@ def pack_boot(original, image):
     struct.pack_into("<I", header, 8, len(kernel))
     # Modifying the kernel invalidates the old GKI signature and AVB footer.
     struct.pack_into("<I", header, 1580, 0)
-    return bytes(header) + kernel.ljust(align(len(kernel)), b"\0") + ramdisk.ljust(align(len(ramdisk)), b"\0")
+    return (
+        bytes(header)
+        + kernel.ljust(align(len(kernel)), b"\0")
+        + ramdisk.ljust(align(len(ramdisk)), b"\0")
+    )
 
 
 def tool(name):
     if name in os.environ:
         return os.environ[name]
-    executable = {"CC": "clang", "LD": "ld.lld", "NM": "llvm-nm",
-                  "OBJCOPY": "llvm-objcopy", "READELF": "llvm-readelf"}[name]
+    executable = {
+        "CC": "clang",
+        "LD": "ld.lld",
+        "NM": "llvm-nm",
+        "OBJCOPY": "llvm-objcopy",
+        "READELF": "llvm-readelf",
+    }[name]
     found = shutil.which(executable)
     if found:
         return found
@@ -74,7 +87,7 @@ def run(command):
 
 def facts():
     result = {}
-    for line in (ROOT / "devices/jellystar/soc.args").read_text().splitlines():
+    for line in (ROOT / "shim/soc.args").read_text().splitlines():
         line = line.split("#", 1)[0].strip()
         if "=" in line:
             key, value = line.split("=", 1)
@@ -91,7 +104,9 @@ def build(original, output, diagnostic=False):
     android.write_bytes(raw.ljust(align(extent), b"\0"))
     android.chmod(0o600)
     # A relative incbin path also handles spaces in the checkout path.
-    (output / "android.S").write_text('.section .android, "ax"\n.globl android_image\nandroid_image:\n.incbin "android.bin"\n')
+    (output / "android.S").write_text(
+        '.section .android, "ax"\n.globl android_image\nandroid_image:\n.incbin "android.bin"\n'
+    )
     board = facts()
     defines = {
         "PANEL_WIDTH": board["panel_width"],
@@ -100,29 +115,66 @@ def build(original, output, diagnostic=False):
         "PMSG_ADDRESS": board["soc_pmsg"] if diagnostic else "0",
         "PMSG_SIZE": board["soc_pmsg_size"],
     }
-    (output / "board.h").write_text("".join(f"#define {key} {value}UL\n" for key, value in defines.items()))
-    flags = ["--target=aarch64-none-elf", "-mcpu=cortex-a55", "-O2", "-ffreestanding",
-             "-nostdlib", "-fno-pic", "-fno-pie", "-fno-stack-protector", "-mgeneral-regs-only",
-             "-mstrict-align", "-Wall", "-Wextra", "-Werror", "-I", str(output)]
+    (output / "board.h").write_text(
+        "".join(f"#define {key} {value}UL\n" for key, value in defines.items())
+    )
+    flags = [
+        "--target=aarch64-none-elf",
+        "-mcpu=cortex-a55",
+        "-O2",
+        "-ffreestanding",
+        "-nostdlib",
+        "-fno-pic",
+        "-fno-pie",
+        "-fno-stack-protector",
+        "-mgeneral-regs-only",
+        "-mstrict-align",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-I",
+        str(output),
+    ]
     objects = []
     for source in [ROOT / "shim/start.S", ROOT / "shim/shim.c", output / "android.S"]:
         obj = output / (source.stem + ".o")
-        subprocess.run([tool("CC"), *flags, "-c", str(source), "-o", str(obj)], cwd=output, check=True)
+        subprocess.run(
+            [tool("CC"), *flags, "-c", str(source), "-o", str(obj)],
+            cwd=output,
+            check=True,
+        )
         objects.append(str(obj))
     # Only the Linux header may contain a load-address-independent absolute size.
     relocations = run([tool("READELF"), "-r", *objects])
     if relocations.count("R_AARCH64_ABS64") != 1:
         raise ValueError("unexpected absolute pointers in position-independent loader")
     elf = output / "shim.elf"
-    run([tool("LD"), "-m", "aarch64elf", "-T", "link.ld", "--build-id=none",
-         f"--defsym=ANDROID_TEXT_OFFSET={text_offset}", *objects, "-o", str(elf)])
+    run(
+        [
+            tool("LD"),
+            "-m",
+            "aarch64elf",
+            "-T",
+            "link.ld",
+            "--build-id=none",
+            f"--defsym=ANDROID_TEXT_OFFSET={text_offset}",
+            *objects,
+            "-o",
+            str(elf),
+        ]
+    )
     image_path = output / "Image"
     run([tool("OBJCOPY"), "-O", "binary", str(elf), str(image_path)])
-    symbols = {parts[2]: int(parts[0], 16) for line in run([tool("NM"), str(elf)]).splitlines()
-               if len(parts := line.split()) == 3 and parts[1].upper() in "ABDRT"}
+    symbols = {
+        parts[2]: int(parts[0], 16)
+        for line in run([tool("NM"), str(elf)]).splitlines()
+        if len(parts := line.split()) == 3 and parts[1].upper() in "ABDRT"
+    }
     image = image_path.read_bytes().ljust(symbols["_end"], b"\0")
     embedded = symbols["android_image"]
-    if (embedded - text_offset) % ALIGNMENT or image[embedded:embedded + len(raw)] != raw:
+    if (embedded - text_offset) % ALIGNMENT or image[
+        embedded : embedded + len(raw)
+    ] != raw:
         raise ValueError("embedded Android Image placement or contents differ")
     if struct.unpack_from("<Q", image, 16)[0] != len(image):
         raise ValueError("composite Linux Image size differs from header")
@@ -143,8 +195,15 @@ def build(original, output, diagnostic=False):
     path.write_bytes(packed)
     path.chmod(0o600)
     print(f"{path}: {len(packed)} bytes; Android at +{embedded:#x}; ramdisk preserved")
-    print("Mode:", "one-shot pmsg colour diagnostic, then Android" if diagnostic else "Android only")
-    print("Offline checks passed; Android fallback and LK loading have NOT been tested on hardware.")
+    print(
+        "Mode:",
+        "one-shot pmsg colour diagnostic, then Android"
+        if diagnostic
+        else "Android only",
+    )
+    print(
+        "Offline checks passed; Android fallback and LK loading have NOT been tested on hardware."
+    )
     return path
 
 
@@ -152,7 +211,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("boot", type=Path, help="saved boot_a partition image")
     parser.add_argument("--out", type=Path, default=ROOT / "out/chainboot")
-    parser.add_argument("--diagnostic", action="store_true", help="enable the one-shot pmsg diagnostic")
+    parser.add_argument(
+        "--diagnostic", action="store_true", help="enable the one-shot pmsg diagnostic"
+    )
     args = parser.parse_args()
     build(args.boot.read_bytes(), args.out, args.diagnostic)
 
