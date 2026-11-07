@@ -6,16 +6,9 @@ recon/
 out/
 *.img
 *.simg
-!docs/img/*.png
 
 # Apple's material: never in git
 ipsw/
 *.dmg
 *.trustcache
 *.ipsw
-
-# python
-__pycache__/
-*.pyc
-
-.DS_Store
