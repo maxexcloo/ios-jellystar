@@ -6,3 +6,4 @@
 - The diagnostic trigger is one-shot: consume it before touching display hardware, then continue into Android. Runtime writes must stay inside the live framebuffer reservation. Keep the Android path free of MMIO and changes to MMU, cache or exception-level configuration.
 - The packaged DT's panel name/framebuffer is misleading. Use live DT reservations and identified bound drivers; a Chipsea firmware-update blob does not establish volatile firmware.
 - Run `mise run check`; build with `mise run build -- SAVED_BOOT_IMAGE`. Offline checks establish image structure and host behaviour only. Firmware, phone dumps/logs, Apple material and generated images remain outside git and tool output.
+- Future root preparation must invalidate MobileGestalt’s hardware cache when advertised capabilities change; camera/flash advertisements require working media services. Replace loaded signed executables by rename.
