@@ -1,4 +1,11 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  // XNU 8796 and Xcode 16's SDK form one qualified ABI; upgrade them together.
+  packageRules: [
+    {
+      matchPackageNames: ["https://github.com/apple-oss-distributions/xnu", "macos"],
+      enabled: false,
+    },
+  ],
   extends: ["github>maxexcloo/dotfiles//renovate/default.json5"],
 }

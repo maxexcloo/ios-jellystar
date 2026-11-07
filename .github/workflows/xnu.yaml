@@ -8,6 +8,12 @@ on:
       - shim/soc.args
       - tools/prepare-kernel.py
       - xnu/**
+  pull_request:
+    paths:
+      - .github/workflows/xnu.yaml
+      - shim/soc.args
+      - tools/prepare-kernel.py
+      - xnu/**
   workflow_dispatch:
 
 permissions:
@@ -19,6 +25,7 @@ concurrency:
 
 jobs:
   build:
+    # The pinned IIG replay requires Xcode 16.0 and its macOS 15 SDK.
     runs-on: macos-15-intel
     timeout-minutes: 120
     steps:
