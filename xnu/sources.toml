@@ -12,4 +12,4 @@ commit = "663906528d1cd5ea8fde7de6f16de73db9511549"
 url = "https://github.com/apple-oss-distributions/xnu"
 # xnu-8796.141.3, paired with the pinned HelioDarwin patches and IIG sources.
 # renovate: datasource=git-refs depName=https://github.com/apple-oss-distributions/xnu
-commit = "1b191cb58250d0705d8a51287127505aa4bc0789"
+commit = "f6217f891ac0bb64f3d375211650a4c1ff8ca1ea"
