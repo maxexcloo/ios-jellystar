@@ -66,3 +66,15 @@
  Lsweet_mark_row:
  	mov		x3, #64
  	mov		x5, x0
+--- a/pexpert/pexpert/arm64/Makefile
++++ b/pexpert/pexpert/arm64/Makefile
+@@ -18,7 +18,8 @@
+ 	H13.h \
+ 	VMAPPLE.h \
+ 	BCM2837.h \
+-	SWEET.h
++	SWEET.h \
++	jellystar.h
+ 
+ 
+ # Headers installed into System.framework/PrivateHeaders (userspace internal SDK only).
