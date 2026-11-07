@@ -70,6 +70,8 @@ soc_pstore=0x48090000                        # reserved-memory/mblock-10-pstore 
 soc_pstore_size=0xe0000                      # reserved-memory/mblock-10-pstore reg[1]
 soc_pmsg=0x48160000                         # Linux 5.10 ramoops: base + mem_size - pmsg_size (live bootargs)
 soc_pmsg_size=0x10000                       # /chosen bootargs ramoops.pmsg_size
+soc_console=0x4811f000                     # Linux 5.10 ramoops layout; live args, default ftrace_size=0x1000
+soc_console_size=0x40000                   # /chosen bootargs ramoops.console_size
 soc_aee_kinfo=0x48080000                     # reserved-memory/mblock-9-aee_debug_kinfo
 soc_minirdump=0x48170000                     # reserved-memory/mblock-11-minirdump
 soc_touch_i2c=0x11e00000                     # dtbo fragment@34 target: /soc/i2c@11e00000 (mediatek,mt6983-i2c)
@@ -85,5 +87,5 @@ soc_touch_yres=854                           # tpd-resolution 0x356
 soc_touch_max=10                             # tpd-max-touch-num
 soc_touch_fw_embedded=upd_data               # .rodata, 85848 B, magic "CHSC" -- in the .ko, not /vendor
 soc_touch_fw_bytes=85848
-soc_touch_proto=i2c-reg                      # core_read/core_write + bulk_read/bulk_write
-soc_touch_report_parse=semi_touch_core_read  # the function to port; fw download path not needed to read
+soc_touch_proto=i2c-reg                      # BE32 address 0x2000002c, repeated-start 28-byte read
+soc_touch_report_parse=semi_touch_irq_handler_imp  # 28-byte report; five 5-byte records, not DT maximum

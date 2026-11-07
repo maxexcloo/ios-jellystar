@@ -1,0 +1,2 @@
+# Unified-diff context includes significant whitespace; preserve patch bytes.
+xnu/patches/*.patch -whitespace

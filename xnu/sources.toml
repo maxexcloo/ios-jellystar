@@ -1,0 +1,15 @@
+[helio]
+url = "https://github.com/squeeeezy/HelioDarwin"
+# renovate: datasource=git-refs depName=https://github.com/squeeeezy/HelioDarwin
+commit = "e04035ebe905a7d41926ee4582a601cb114f8bc4"
+
+[dxb]
+url = "https://github.com/blacktop/darwin-xnu-build"
+# renovate: datasource=git-refs depName=https://github.com/blacktop/darwin-xnu-build
+commit = "663906528d1cd5ea8fde7de6f16de73db9511549"
+
+[xnu]
+url = "https://github.com/apple-oss-distributions/xnu"
+# xnu-8796.141.3, paired with the pinned HelioDarwin patches and IIG sources.
+# renovate: datasource=git-refs depName=https://github.com/apple-oss-distributions/xnu
+commit = "1b191cb58250d0705d8a51287127505aa4bc0789"

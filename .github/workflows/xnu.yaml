@@ -1,0 +1,51 @@
+name: XNU
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/xnu.yaml
+      - shim/soc.args
+      - tools/prepare-kernel.py
+      - xnu/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  cancel-in-progress: true
+  group: ${{ github.workflow }}-${{ github.ref }}
+
+jobs:
+  build:
+    runs-on: macos-15-intel
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Set Up Shared Tools & Tasks
+        uses: maxexcloo/dotfiles/.github/actions/mise@main
+        with:
+          tools: python@latest
+      - name: Set Up Xcode 16
+        run: |
+          test -d /Applications/Xcode_16.app
+          echo 'DEVELOPER_DIR=/Applications/Xcode_16.app/Contents/Developer' >> "$GITHUB_ENV"
+          sudo xcode-select -s /Applications/Xcode_16.app
+          xcodebuild -version | grep -Fx 'Build version 16A242d'
+          brew install jq gum bash cmake ninja
+          mkdir -p out/bin
+          printf '#!/bin/sh\nexit 0\n' > out/bin/xcodes
+          chmod +x out/bin/xcodes
+      - name: Build Kernel
+        run: |
+          export PATH="$PWD/out/bin:$PATH"
+          python tools/prepare-kernel.py --build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: jellystar-xnu
+          path: out/kernel/dxb/fakeroot/System/Library/Kernels/kernel.development.sweet
+          if-no-files-found: error
+          retention-days: 7

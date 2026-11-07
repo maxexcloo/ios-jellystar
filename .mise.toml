@@ -1,8 +1,11 @@
+[tools]
+python = "latest"
+
 [tasks.build]
-run = "python3 tools/build-shim.py"
+run = "python tools/build-shim.py"
 
 [tasks.check]
-run = "python3 tools/check.py"
+run = "python tools/check.py"
 depends = [
   "check:actions",
   "check:mise",

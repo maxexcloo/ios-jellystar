@@ -180,8 +180,8 @@ NOT_IN_DT = {
     "soc_touch_input": "verified on the phone: /proc/bus/input/devices event2",
     "soc_touch_fw_embedded": "decoded from chsc5xxx_touch.ko: .rodata upd_data, 85848 B, magic CHSC",
     "soc_touch_fw_bytes": "decoded from chsc5xxx_touch.ko (magic CHSC)",
-    "soc_touch_proto": "decoded from chsc5xxx_touch.ko: semi_touch_core_read/core_write + bulk",
-    "soc_touch_report_parse": "decoded from chsc5xxx_touch.ko: the function to port",
+    "soc_touch_proto": "decoded from chsc5xxx_touch.ko: BE32 report address + repeated-start read",
+    "soc_touch_report_parse": "decoded from chsc5xxx_touch.ko: semi_touch_irq_handler_imp",
     "soc_mmsys_config": "not present in this DTB",
     "soc_ovl0": "not present in this DTB",
     # Storage geometry comes from /proc/partitions and blockdev, not the DT.
@@ -274,7 +274,7 @@ def got_for(value, kind, index):
 def derived_value(trees, key):
     if "live" not in trees:
         return None
-    if key.startswith("soc_pmsg"):
+    if key.startswith(("soc_pmsg", "soc_console")):
         value = prop_of(trees, "live", "/chosen", "bootargs")
         if value is None:
             return None
@@ -284,6 +284,20 @@ def derived_value(trees, key):
             if token.startswith("ramoops.") and "=" in token
         )
         size = int(args["ramoops.pmsg_size"], 0)
+        if key.startswith("soc_console"):
+            console = int(args["ramoops.console_size"], 0)
+            if key == "soc_console_size":
+                return console
+            # Linux 5.10 ramoops defaults: ftrace_size=4096. record_size
+            # affects dump record division, not the dump/console boundary.
+            ftrace = int(args.get("ramoops.ftrace_size", "4096"), 0)
+            return (
+                int(args["ramoops.mem_address"], 0)
+                + int(args["ramoops.mem_size"], 0)
+                - size
+                - ftrace
+                - console
+            )
         if key == "soc_pmsg_size":
             return size
         return (
@@ -318,6 +332,8 @@ def main(argv):
     for key in sorted(facts):
         expected = facts[key]
         if key in (
+            "soc_console",
+            "soc_console_size",
             "soc_pmsg",
             "soc_pmsg_size",
             "soc_dram_kernel_base",
