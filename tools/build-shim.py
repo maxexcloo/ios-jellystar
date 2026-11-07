@@ -95,7 +95,7 @@ def facts():
     return result
 
 
-def build(original, output, diagnostic=False):
+def build(original, output, diagnostic=False, xnu_payload=None):
     output = output.resolve()
     output.mkdir(parents=True, exist_ok=True, mode=0o700)
     output.chmod(0o700)
@@ -112,8 +112,14 @@ def build(original, output, diagnostic=False):
         "PANEL_WIDTH": board["panel_width"],
         "PANEL_HEIGHT": board["panel_height"],
         "SOC_TOPRGU": board["soc_toprgu"],
-        "PMSG_ADDRESS": board["soc_pmsg"] if diagnostic else "0",
+        "PMSG_ADDRESS": board["soc_pmsg"] if diagnostic or xnu_payload else "0",
         "PMSG_SIZE": board["soc_pmsg_size"],
+        "XNU_ENABLED": "1" if xnu_payload else "0",
+        "DIAGNOSTIC_ENABLED": "1" if diagnostic else "0",
+        "XNU_FB": board["soc_fb"],
+        "XNU_FB_SIZE": board["soc_fb_reserved"],
+        "XNU_PHYS": board["soc_dram_kernel_base"],
+        "XNU_MEMORY": board["soc_dram_kernel_size"],
     }
     (output / "board.h").write_text(
         "".join(f"#define {key} {value}UL\n" for key, value in defines.items())
@@ -135,8 +141,15 @@ def build(original, output, diagnostic=False):
         "-I",
         str(output),
     ]
+    sources = [ROOT / "shim/start.S", ROOT / "shim/shim.c", output / "android.S"]
+    if xnu_payload:
+        (output / "payload.bin").write_bytes(xnu_payload.read_bytes())
+        (output / "payload.S").write_text(
+            '.section .payload, "a"\n.incbin "payload.bin"\n'
+        )
+        sources += [ROOT / "shim/xnu.c", output / "payload.S"]
     objects = []
-    for source in [ROOT / "shim/start.S", ROOT / "shim/shim.c", output / "android.S"]:
+    for source in sources:
         obj = output / (source.stem + ".o")
         subprocess.run(
             [tool("CC"), *flags, "-c", str(source), "-o", str(obj)],
@@ -197,7 +210,9 @@ def build(original, output, diagnostic=False):
     print(f"{path}: {len(packed)} bytes; Android at +{embedded:#x}; ramdisk preserved")
     print(
         "Mode:",
-        "one-shot pmsg colour diagnostic, then Android"
+        "one-shot experimental XNU (EL1 only); otherwise Android"
+        if xnu_payload
+        else "one-shot pmsg colour diagnostic, then Android"
         if diagnostic
         else "Android only",
     )
@@ -214,8 +229,13 @@ def main():
     parser.add_argument(
         "--diagnostic", action="store_true", help="enable the one-shot pmsg diagnostic"
     )
+    parser.add_argument(
+        "--xnu-payload", type=Path, help="embed explicit one-shot XNU experiment"
+    )
     args = parser.parse_args()
-    build(args.boot.read_bytes(), args.out, args.diagnostic)
+    if args.diagnostic and args.xnu_payload:
+        parser.error("choose diagnostic or XNU")
+    build(args.boot.read_bytes(), args.out, args.diagnostic, args.xnu_payload)
 
 
 if __name__ == "__main__":

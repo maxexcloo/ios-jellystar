@@ -88,24 +88,23 @@ int framebuffer_from_fdt(const void *blob, struct framebuffer *fb)
  * Consume only the marker, including a marker split across the ring boundary.
  * Never dump the pmsg contents: Android logd may put private data there.
  */
-int take_trigger(volatile void *zone, size_t bytes)
+int take_marker(volatile void *zone, size_t bytes, const char *marker, size_t length)
 {
-	static const char marker[] = "JELLYSTAR:DIAGNOSTIC";
 	volatile uint32_t *h = zone;
 	if (bytes < 12 || h[0] != 0x43474244)
 		return 0;
 	size_t capacity = bytes - 12, start = h[1], size = h[2];
-	if (start > size || size > capacity || size < sizeof(marker) - 1)
+	if (start > size || size > capacity || size < length)
 		return 0;
 	volatile uint8_t *data = (volatile uint8_t *)zone + 12;
 	size_t oldest = start % size;
 	int found = 0;
-	for (size_t i = 0; i + sizeof(marker) - 1 <= size; i++) {
+	for (size_t i = 0; i + length <= size; i++) {
 		size_t j = 0;
-		while (j < sizeof(marker) - 1 && data[(oldest + i + j) % size] == marker[j])
+		while (j < length && data[(oldest + i + j) % size] == marker[j])
 			j++;
-		if (j == sizeof(marker) - 1) {
-			for (j = 0; j < sizeof(marker) - 1; j++)
+		if (j == length) {
+			for (j = 0; j < length; j++)
 				data[(oldest + i + j) % size] = 0;
 			found = 1;
 		}
@@ -113,8 +112,17 @@ int take_trigger(volatile void *zone, size_t bytes)
 	return found;
 }
 
+int take_trigger(volatile void *zone, size_t bytes)
+{
+	return take_marker(zone, bytes, "JELLYSTAR:DIAGNOSTIC", 20);
+}
+
 #ifndef SHIM_HOST_TEST
 #include "board.h"
+#if XNU_ENABLED
+#include "xnu.h"
+extern const uint8_t _payload_start[], _payload_end[], _end[];
+#endif
 
 static inline void write32(uintptr_t address, uint32_t value)
 {
@@ -142,7 +150,29 @@ static void wait_ms(unsigned ms)
 
 void shim_main(uintptr_t dtb)
 {
-	if (!PMSG_ADDRESS || !take_trigger((volatile void *)PMSG_ADDRESS, PMSG_SIZE))
+#if XNU_ENABLED
+	if (take_marker((volatile void *)PMSG_ADDRESS, PMSG_SIZE, "JELLYSTAR:XNU", 13)) {
+		__asm__ volatile("dsb sy" ::: "memory");
+		uint64_t el, control, mpidr;
+		__asm__ volatile("mrs %0, CurrentEL; mrs %1, sctlr_el1; mrs %2, mpidr_el1"
+		                 : "=r"(el), "=r"(control), "=r"(mpidr));
+		struct framebuffer fb;
+		struct xnu_layout layout;
+		/* Refuse before loading if LK's actual handoff differs from the
+		 * supported Linux EL1, MMU/D-cache-off contract. No guessed EL switch.
+		 */
+		if (el == 4 && !(control & 5) && !(mpidr & 0xff00ffffffULL) &&
+		    (uintptr_t)_end <= XNU_PHYS && dtb < XNU_PHYS &&
+		    framebuffer_from_fdt((const void *)dtb, &fb) &&
+		    fb.base == XNU_FB && fb.size == XNU_FB_SIZE &&
+		    xnu_layout(_payload_start, _payload_end - _payload_start,
+		               XNU_PHYS, XNU_MEMORY, &layout))
+			xnu_boot((const struct xnu_payload *)_payload_start, &layout);
+		return;
+	}
+#endif
+	if (!DIAGNOSTIC_ENABLED || !PMSG_ADDRESS ||
+	    !take_trigger((volatile void *)PMSG_ADDRESS, PMSG_SIZE))
 		return;
 	/* Consume before drawing so the next reset takes the Android path. */
 	__asm__ volatile("dsb sy" ::: "memory");
