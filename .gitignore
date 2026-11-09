@@ -1,14 +1,6 @@
-# vendor images and anything read off the phone: never committed
+# vendor images, phone observations and partition backups
 fw/
 recon/
 
-# generated images and build output
+# generated sources, images and builds
 out/
-*.img
-*.simg
-
-# Apple's material: never in git
-ipsw/
-*.dmg
-*.trustcache
-*.ipsw
