@@ -17,10 +17,6 @@ part_userdata_bytes=244771160064              # sdc60 = 228.0 GiB (blockdev --ge
 part_userdata_kib=239034336                   # /proc/partitions column 3 (KiB, NOT sectors)
 part_super_bytes=9663676416                   # sdc59 = 9.0 GiB
 part_super_kib=9437184
-part_boot_bytes=67108864                      # boot_a/boot_b: 64 MiB each, header v4
-part_dtbo_bytes=8388608                       # dtbo_a/dtbo_b
-part_vbmeta_bytes=8388608                     # vbmeta_a/b -- suspiciously large, verify
-part_metadata_bytes=33554432                  # metadata
 part_expdb_bytes=134217728
 soc_ufs=0x11270000                           # /soc/ufshci@11270000 reg[0] size 0x2300
 soc_ufs_size=0x2300
