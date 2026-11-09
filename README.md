@@ -96,8 +96,8 @@ A triggered diagnostic consumes its marker before drawing and then continues to 
 Vendor images and modules stay in `fw/` or `recon/`; `out/` contains generated images. Apple's files, partition backups and phone logs are not committed. The board facts and their sources live in [shim/soc.args](shim/soc.args).
 
 ```sh
-python3 tools/extract-dt.py vendor_boot.img dtbo.img --out fw
-python3 tools/check-facts.py
+mise exec -- python tools/extract-dt.py vendor_boot.img dtbo.img --out fw
+mise exec -- python tools/check-facts.py
 ```
 
 The checker reads `fw/jellystar.dtb`, `fw/dtbo.img` and, when present, the saved `recon/live.dtb`. The packaged DT disagrees with the phone's framebuffer/panel information; the live reservation is authoritative. `tools/recon.sh` collects Android observations, and `tools/unpack-vendor-ramdisk.sh` plus `tools/panel-init.py` recover the vendor panel data.
