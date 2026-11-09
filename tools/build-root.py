@@ -6,10 +6,8 @@ images are attached read-only; all writable mounts belong to the new output.
 """
 
 import argparse
-import importlib.util
 import os
 import plistlib
-import shutil
 import stat
 import subprocess
 import sys
@@ -119,26 +117,6 @@ def finish_root(root, source):
             raise RuntimeError(f"Numeric ownership did not survive: {relative}")
 
 
-def install_display_probe(root, executable):
-    spec = importlib.util.spec_from_file_location(
-        "display_probe_builder", ROOT / "tools/build-display-probe.py"
-    )
-    builder = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(builder)
-    builder.verify_image(executable)
-    destination = root / "usr/local/bin/jelly-display-probe"
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as stream:
-        temporary = Path(stream.name)
-    try:
-        shutil.copyfile(executable, temporary)
-        temporary.chmod(0o755)
-        # Preserve any mapped executable inode: publish the replacement by rename.
-        temporary.replace(destination)
-    finally:
-        temporary.unlink(missing_ok=True)
-
-
 def run(*args):
     return subprocess.check_output([str(arg) for arg in args], stderr=subprocess.PIPE)
 
@@ -150,11 +128,6 @@ def main():
     parser.add_argument("--source", type=Path, default=ROOT / "out/sources/HelioDarwin")
     parser.add_argument("--out", type=Path, default=ROOT / "out/xnu/iosroot.img")
     parser.add_argument("--gib", type=int, default=16)
-    parser.add_argument(
-        "--display-probe",
-        type=Path,
-        help="install the verified iOS display diagnostic; do not run it",
-    )
     args = parser.parse_args()
     images = inputs(args.manifest.resolve())
     print(
@@ -241,8 +214,6 @@ def main():
             )
         cryptex_links(mount)
         finish_root(mount, source)
-        if args.display_probe is not None:
-            install_display_probe(mount, args.display_probe.resolve())
         run("diskutil", "unmount", device)
         run("diskutil", "verifyVolume", device)
     finally:

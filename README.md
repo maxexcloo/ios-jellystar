@@ -37,7 +37,7 @@ mise run build -- recon/backup/boot_a.img --out out/xnu/boot --xnu-payload out/x
 
 The default payload is a minimal smoke test: one A55 CPU, GICv3, the 13 MHz virtual timer and the framebuffer, with a signed static test `init` booted through mockfs `rd=md0`. `--display` and `--touch` each add their own ADT node; without them neither service starts.
 
-`python tools/build-display-probe.py` builds and verifies a signed iOS display diagnostic that needs a full iOS root. Run as root, `python tools/build-root.py BuildManifest.plist` builds a standalone HFS+ root from locally supplied D22AP images, preserving numeric ownership and invalidating MobileGestalt's hardware cache; `--check-inputs` only resolves the images and `--display-probe PATH` installs the diagnostic. It does not choose a Jelly partition.
+Run as root, `python tools/build-root.py BuildManifest.plist` builds a standalone HFS+ root from locally supplied D22AP images, preserving numeric ownership and invalidating MobileGestalt's hardware cache; `--check-inputs` only resolves the images. It does not choose a Jelly partition.
 
 ## Device Workflow
 
