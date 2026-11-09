@@ -1,5 +1,6 @@
 {
   $schema: "https://docs.renovatebot.com/renovate-schema.json",
+  extends: ["github>maxexcloo/dotfiles//renovate/default.json5"],
   // XNU 8796 and Xcode 16's SDK form one qualified ABI; upgrade them together.
   packageRules: [
     {
@@ -7,5 +8,4 @@
       enabled: false,
     },
   ],
-  extends: ["github>maxexcloo/dotfiles//renovate/default.json5"],
 }
