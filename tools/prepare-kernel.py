@@ -167,7 +167,7 @@ def main():
         subprocess.run(["bash", "build.sh"], cwd=builder, env=env, check=True)
         kernel = builder / "fakeroot/System/Library/Kernels/kernel.development.sweet"
         subprocess.run(
-            ["python3", str(helio / "x676c/tools/verify-startup.py"), str(kernel)],
+            [sys.executable, str(helio / "x676c/tools/verify-startup.py"), str(kernel)],
             env=env,
             check=True,
         )
