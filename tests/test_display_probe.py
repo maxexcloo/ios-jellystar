@@ -1,21 +1,22 @@
 import ctypes
+import importlib.util
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+spec = importlib.util.spec_from_file_location(
+    "build_shim", ROOT / "tools/build-shim.py"
+)
+boot = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(boot)
 
 
 class DisplayPatternTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        facts = {}
-        for line in (ROOT / "shim/soc.args").read_text().splitlines():
-            line = line.split("#", 1)[0].strip()
-            if "=" in line:
-                key, value = line.split("=", 1)
-                facts[key.strip()] = value.strip()
+        facts = boot.facts()
         cls.width, cls.height = int(facts["panel_width"]), int(facts["panel_height"])
         cls.temp = tempfile.TemporaryDirectory()
         library = Path(cls.temp.name) / "pattern.so"

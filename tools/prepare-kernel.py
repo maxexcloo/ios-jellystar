@@ -3,24 +3,25 @@
 
 import argparse
 import difflib
+import importlib.util
 import os
 import shlex
 import shutil
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def board_header(conf=None):
-    if conf is None:
-        conf = {}
-        for line in (ROOT / "shim/soc.args").read_text().splitlines():
-            line = line.split("#", 1)[0].strip()
-            if "=" in line:
-                key, value = line.split("=", 1)
-                conf[key.strip()] = value.strip()
+def board_header():
+    spec = importlib.util.spec_from_file_location(
+        "build_shim", ROOT / "tools/build-shim.py"
+    )
+    boot = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(boot)
+    conf = boot.facts()
     values = {
         "FB_SIZE": int(conf["soc_fb_reserved"], 0),
         "TOUCH_I2C": int(conf["soc_touch_i2c"], 0),
@@ -88,8 +89,6 @@ def source(path, spec):
 
 
 def prepare(output, sources):
-    import tomllib
-
     pins = tomllib.loads((ROOT / "xnu/sources.toml").read_text())
     helio = source(sources / "HelioDarwin", pins["helio"])
     builder = source(output / "dxb", pins["dxb"])

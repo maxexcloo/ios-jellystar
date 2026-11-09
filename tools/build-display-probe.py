@@ -1,6 +1,7 @@
 """Build or verify the iOS 16 Jelly display diagnostic without executing it."""
 
 import argparse
+import importlib.util
 import struct
 import subprocess
 from pathlib import Path
@@ -47,12 +48,12 @@ def main():
             f"Verified iOS 16 ARM64 signature and platform: {args.verify} (not executed)"
         )
         return
-    facts = {}
-    for line in (ROOT / "shim/soc.args").read_text().splitlines():
-        line = line.split("#", 1)[0].strip()
-        if "=" in line:
-            key, value = line.split("=", 1)
-            facts[key.strip()] = value.strip()
+    spec = importlib.util.spec_from_file_location(
+        "build_shim", ROOT / "tools/build-shim.py"
+    )
+    boot = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(boot)
+    facts = boot.facts()
     args.out.mkdir(parents=True, exist_ok=True)
     image = args.out / "jelly-display-probe"
     sdk = subprocess.check_output(
