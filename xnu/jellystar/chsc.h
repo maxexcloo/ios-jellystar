@@ -15,10 +15,6 @@ extern "C" {
 #define CHSC_SLOT_COUNT 15u
 #define CHSC_HEADER_ADDR 0x20000014u
 #define CHSC_HEADER_BYTES 16u
-#define CHSC_PROBE_ADDR 0x20000018u
-#define CHSC_PROBE_BYTES 4u
-#define CHSC_MODE_ADDR 0x20000020u
-#define CHSC_MODE_BYTES 8u
 
 enum chsc_report_kind {
 	CHSC_REPORT_TOUCH = 1,
