@@ -24,9 +24,9 @@ mise run check
 mise run build -- recon/backup/boot_a.img
 ```
 
-The build writes `out/chainboot/chainboot.img`, embedding the complete saved Android image with its appended data, generic ramdisk and unaffected boot-v4 fields, and omitting invalidated signatures. `--diagnostic` adds the one-shot colour diagnostic; `--xnu-payload PAYLOAD` adds the one-shot XNU experiment.
+The build writes `out/chainboot/chainboot.img`. `--diagnostic` adds the one-shot colour diagnostic; `--xnu-payload PAYLOAD` adds the one-shot XNU experiment.
 
-`xnu/sources.toml` pins HelioDarwin, darwin-xnu-build and Apple's XNU; sources are fetched into `out/sources/`. The XNU workflow builds `DEVELOPMENT/ARM64/SWEET` on Xcode 16 and uploads the `jellystar-xnu` artefact after the startup check passes; run it manually with `gh workflow run xnu.yaml --ref main`. Use that Jelly kernel, not an unmodified Infinix kernel: the local patches change the early framebuffer, marker bounds and pstore console mapping.
+`gh workflow run xnu.yaml --ref main` builds the `jellystar-xnu` artefact. Use that Jelly kernel, not an unmodified Infinix kernel.
 
 ```sh
 python tools/prepare-kernel.py  # --build runs the macOS/Xcode builder
@@ -35,9 +35,7 @@ python tools/build-payload.py PATH_TO_JELLY_KERNEL  # add --display and/or --tou
 mise run build -- recon/backup/boot_a.img --out out/xnu/boot --xnu-payload out/xnu/payload.bin
 ```
 
-The default payload is a minimal smoke test: one A55 CPU, GICv3, the 13 MHz virtual timer and the framebuffer, with a signed static test `init` booted through mockfs `rd=md0`. `--display` and `--touch` each add their own ADT node; without them neither service starts.
-
-Run as root, `python tools/build-root.py BuildManifest.plist` builds a standalone HFS+ root from locally supplied D22AP images, preserving numeric ownership and invalidating MobileGestalt's hardware cache; `--check-inputs` only resolves the images. It does not choose a Jelly partition.
+Run as root, `python tools/build-root.py BuildManifest.plist` builds a standalone HFS+ root from locally supplied D22AP images; `--check-inputs` only resolves the images. It does not choose a Jelly partition.
 
 ## Device Workflow
 
@@ -47,7 +45,7 @@ The next hardware milestone is the Android-only chainloader. Once Android fallba
 mise run build -- recon/backup/boot_a.img --out out/diagnostic --diagnostic
 ```
 
-A `JELLYSTAR:DIAGNOSTIC` marker in the pmsg ring selects it: the loader consumes the marker, draws within the live framebuffer reservation, waits five seconds and continues into Android. Only an image built with `--xnu-payload` recognises `JELLYSTAR:XNU`; it consumes the marker, validates the payload, the framebuffer reservation and an EL1 boot CPU 0 handoff with MMU and data cache off, and otherwise returns to Android. Once entered, XNU does not return to Android. Without a marker, the Android handoff is unchanged. Building an image authorises no experiment.
+A `JELLYSTAR:DIAGNOSTIC` marker in the pmsg ring runs the diagnostic once, then continues into Android. Only an image built with `--xnu-payload` recognises `JELLYSTAR:XNU`; once entered, XNU does not return to Android. Without a marker, Android boots unchanged. Building an image authorises no experiment.
 
 **Recovery:**
 
@@ -66,7 +64,7 @@ python tools/extract-dt.py vendor_boot.img dtbo.img --out fw
 python tools/check-facts.py
 ```
 
-The checker reads `fw/jellystar.dtb`, `fw/dtbo.img` and, when present, `recon/live.dtb`; the packaged DT disagrees with the phone's framebuffer and panel, so the live reservation is authoritative. `tools/recon.sh` collects read-only Android observations, `tools/unpack-vendor-ramdisk.sh` and `tools/panel-init.py` recover vendor panel data, and `tools/touch-report.py REPORT.bin` decodes a saved 28-byte CHSC report.
+`tools/recon.sh` collects read-only Android observations, `tools/unpack-vendor-ramdisk.sh` and `tools/panel-init.py` recover vendor panel data, and `tools/touch-report.py REPORT.bin` decodes a saved 28-byte CHSC report.
 
 ## Credits & Licences
 
