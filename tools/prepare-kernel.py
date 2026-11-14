@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Prepare pinned XNU sources and the Jelly Star patch stack; optionally build."""
+"""Fetch pinned XNU sources; optionally patch and build the Jelly Star kernel."""
 
 import argparse
-import difflib
 import importlib.util
 import os
 import shlex
@@ -61,30 +60,14 @@ def source(path, spec):
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q", str(path)], check=True)
     head = subprocess.run(
-        ["git", "-C", str(path), "rev-parse", "--verify", "HEAD"],
+        ["git", "-C", str(path), "rev-parse", "--verify", "-q", "HEAD"],
         capture_output=True,
+        text=True,
         check=False,
-    )
-    if head.returncode:
-        subprocess.run(
-            [
-                "git",
-                "-C",
-                str(path),
-                "fetch",
-                "-q",
-                "--depth",
-                "1",
-                spec["url"],
-                spec["commit"],
-            ],
-            check=True,
-        )
-        subprocess.run(
-            ["git", "-C", str(path), "checkout", "-q", "FETCH_HEAD"], check=True
-        )
-    if git(path, "rev-parse", "HEAD") != spec["commit"]:
-        raise ValueError(f"source pin mismatch: {path}")
+    ).stdout.strip()
+    if head != spec["commit"]:
+        git(path, "fetch", "-q", "--depth", "1", spec["url"], spec["commit"])
+    git(path, "checkout", "-q", "-f", spec["commit"])
     return path
 
 
@@ -93,56 +76,33 @@ def prepare(output, sources):
     helio = source(sources / "HelioDarwin", pins["helio"])
     builder = source(output / "dxb", pins["dxb"])
     source(builder / "xnu", pins["xnu"])
-    patches = builder / "patches"
-    upstream_files = git(helio, "ls-files", "xnu/patches").splitlines()
-    local_files = git(
-        ROOT, "ls-files", "--cached", "--others", "--exclude-standard", "xnu/patches"
-    ).splitlines()
-    for root, files in ((helio, upstream_files), (ROOT, local_files)):
-        for name in files:
-            path = root / name
-            if path.suffix in (".patch", ".sh"):
-                shutil.copy2(path, patches / path.name)
-    header = board_header().splitlines()
-    (patches / "0211-jellystar-board.patch").write_text(
-        "--- /dev/null\n+++ b/pexpert/pexpert/arm64/jellystar.h\n"
-        f"@@ -0,0 +1,{len(header)} @@\n" + "".join(f"+{line}\n" for line in header)
-    )
-    # Stage our original source, while the third-party port remains a pinned dependency.
-    device_patch = []
-    device_files = git(
-        ROOT, "ls-files", "--cached", "--others", "--exclude-standard", "xnu/jellystar"
-    ).splitlines()
-    for name in device_files:
-        path = ROOT / name
-        target = "b/bsd/dev/jellystar/" + path.name
-        device_patch.extend(
-            difflib.unified_diff(
-                [],
-                path.read_text().splitlines(True),
-                fromfile="/dev/null",
-                tofile=target,
-            )
+    script = builder / "build.sh"
+    script.write_text(
+        script.read_text().replace(
+            'ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"',
+            'ARCHS="arm64" VALID_ARCHS="arm64" '
+            'OTHER_CFLAGS="-mkernel -nostdinc -Wno-packed -mcpu=cortex-a53"',
         )
-    (patches / "0212-jellystar-sources.patch").write_text("".join(device_patch))
-    build = git(builder, "show", "HEAD:build.sh")
-    build = build.replace(
-        'ARCHS="x86_64 arm64e" VALID_ARCHS="x86_64 arm64e"',
-        'ARCHS="arm64" VALID_ARCHS="arm64" '
-        'OTHER_CFLAGS="-mkernel -nostdinc -Wno-packed -mcpu=cortex-a53"',
     )
-    # DXB's generic patches may be inapplicable; the numbered port patches must apply.
-    old = 'warning "Skipping patch ${PATCH} (already upstream, previously applied, or malformed): ${APPLY_CHECK}"'
-    build = build.replace(
-        old,
-        'case "${PATCH##*/}" in\n'
-        '                    [0-9]*.patch) error "Port patch failed: ${PATCH}: ${APPLY_CHECK}"; exit 1 ;;\n'
-        f"                    *) {old} ;;\n"
-        "                esac",
-    )
-    (builder / "build.sh").write_text(build + "\n")
     print(f"Prepared {builder}; no kernel has been compiled yet")
     return builder, helio
+
+
+def patch(xnu, helio, env):
+    git(xnu, "clean", "-fdxq")
+    (xnu / "pexpert/pexpert/arm64/jellystar.h").write_text(board_header())
+    shutil.copytree(ROOT / "xnu/jellystar", xnu / "bsd/dev/jellystar")
+    # DXB's order: every staging script, then every patch, sorted by name.
+    port = sorted(
+        [*(helio / "xnu/patches").iterdir(), *(ROOT / "xnu/patches").iterdir()],
+        key=lambda path: path.name,
+    )
+    for path in port:
+        if path.suffix == ".sh":
+            subprocess.run(["bash", str(path)], cwd=xnu, env=env, check=True)
+    for path in port:
+        if path.suffix == ".patch":
+            git(xnu, "apply", str(path))
 
 
 def main():
@@ -164,6 +124,7 @@ def main():
             IIG=shlex.join([sys.executable, str(iig)]),
             MAKEFLAGS=f"OTHER_CXXFLAGS=-include{helio}/x676c/tools/iig-8796-abi.h",
         )
+        patch(builder / "xnu", helio, env)
         subprocess.run(["bash", "build.sh"], cwd=builder, env=env, check=True)
         kernel = builder / "fakeroot/System/Library/Kernels/kernel.development.sweet"
         subprocess.run(
