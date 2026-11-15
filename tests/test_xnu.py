@@ -1,4 +1,5 @@
 import ctypes
+import importlib
 import struct
 import subprocess
 import tempfile
@@ -6,6 +7,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+boot = importlib.import_module("tools.build-shim")
 PHYS = 0x140000000
 MEMORY = 0xFFFF0000
 VIRT = 0xFFFFFE0006000000
@@ -45,7 +47,7 @@ class XnuLoaderTests(unittest.TestCase):
         lib = Path(cls.temp.name) / "xnu.so"
         subprocess.run(
             [
-                "cc",
+                boot.tool("CC"),
                 "-DSHIM_HOST_TEST",
                 "-Wall",
                 "-Wextra",
