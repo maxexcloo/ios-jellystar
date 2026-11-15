@@ -32,12 +32,10 @@ case "$UID_" in
 *) echo "  NOT root: run 'adb root' first (/proc/device-tree needs it)"; exit 1 ;;
 esac
 
-i=0
 for p in ro.board.platform ro.product.device ro.product.model ro.build.version.release \
          ro.build.fingerprint ro.boot.hardware ro.boot.slot_suffix \
          ro.boot.verifiedbootstate ro.boot.flash.locked; do
 	printf '%-28s %s\n' "$p" "$($ADB shell getprop $p 2>/dev/null | tr -d '\r')"
-	i=$((i+1))
 done
 
 echo
