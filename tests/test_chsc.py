@@ -8,6 +8,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+boot = importlib.import_module("tools.build-shim")
 spec = importlib.util.spec_from_file_location(
     "touch_report", ROOT / "tools/touch-report.py"
 )
@@ -68,7 +69,7 @@ class ChscProtocolTests(unittest.TestCase):
         library = Path(cls.temp.name) / "chsc.so"
         subprocess.run(
             [
-                "cc",
+                boot.tool("CC"),
                 "-std=c11",
                 "-Wall",
                 "-Wextra",
@@ -82,7 +83,6 @@ class ChscProtocolTests(unittest.TestCase):
             check=True,
         )
         cls.lib = ctypes.CDLL(str(library))
-        cls.lib.chsc_address.argtypes = [ctypes.c_uint32, ctypes.c_void_p]
         cls.lib.chsc_decode_report.argtypes = [
             ctypes.c_void_p,
             ctypes.c_size_t,
@@ -178,7 +178,7 @@ class ChscProtocolTests(unittest.TestCase):
         self.assertEqual(self.lib.chsc_active_mask(state), 0)
         self.assertEqual((state.slots[2].x, state.slots[2].y), (10, 20))
 
-    def test_startup_header_and_address_byte_orders(self):
+    def test_startup_header_byte_order(self):
         for signature, status in ((0x43534843, 1), (0x4F525245, 2), (0, 0)):
             data = struct.pack(
                 "<HHIIHH", 0x1234, 0xFFFF, signature, 0xABCDEF01, 0x102, 0x304
@@ -192,13 +192,6 @@ class ChscProtocolTests(unittest.TestCase):
                 (header.firmware_version, header.raw_offset, header.diff_offset),
                 (0x1234, 0x102, 0x304),
             )
-        for address, expected in (
-            (0x2000002C, b"\x20\0\0\x2c"),
-            (0x12345678, b"\x12\x34\x56\x78"),
-        ):
-            command = ctypes.create_string_buffer(4)
-            self.lib.chsc_address(address, command)
-            self.assertEqual(command.raw, expected)
 
     def test_incomplete_wire_reads_do_not_publish_partial_results(self):
         for structure, function, sizes in (

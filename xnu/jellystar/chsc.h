@@ -48,7 +48,6 @@ struct chsc_startup {
 	uint8_t status;
 };
 
-void chsc_address(uint32_t address, uint8_t command[4]);
 int chsc_decode_startup(const uint8_t *data, size_t bytes, struct chsc_startup *out);
 int chsc_decode_report(const uint8_t *data, size_t bytes, struct chsc_report *out);
 void chsc_state_init(struct chsc_state *state);

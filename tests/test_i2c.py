@@ -1,10 +1,12 @@
 import ctypes
+import importlib
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+boot = importlib.import_module("tools.build-shim")
 READ16 = ctypes.CFUNCTYPE(ctypes.c_uint16, ctypes.c_void_p, ctypes.c_uint)
 WRITE16 = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_uint, ctypes.c_uint16)
 READ32 = ctypes.CFUNCTYPE(ctypes.c_uint32, ctypes.c_void_p, ctypes.c_uint)
@@ -147,7 +149,7 @@ class I2cTransportTests(unittest.TestCase):
         library = Path(cls.temp.name) / "i2c.so"
         subprocess.run(
             [
-                "cc",
+                boot.tool("CC"),
                 "-shared",
                 "-fPIC",
                 "-Wall",

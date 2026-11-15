@@ -14,6 +14,7 @@ Get the inputs first:  tools/extract-dt.py vendor_boot.img dtbo.img --out fw
 """
 
 import argparse
+import importlib
 import os
 import sys
 from pathlib import Path
@@ -21,6 +22,7 @@ from pathlib import Path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import fdt
 
+boot = importlib.import_module("build-shim")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # key -> (tree, node, property, kind, index)
@@ -247,17 +249,6 @@ def prop_of(trees, src, node, prop):
     return None
 
 
-def parse_conf(path):
-    facts = {}
-    for raw in Path(path).read_text().splitlines():
-        line = raw.split("#", 1)[0].strip()
-        if not line or "=" not in line:
-            continue
-        key, value = line.split("=", 1)
-        facts[key.strip()] = value.strip()
-    return facts
-
-
 def want_list(text):
     return [int(token, 0) for token in text.replace(",", " ").split()]
 
@@ -332,7 +323,7 @@ def main(argv):
     args = ap.parse_args(argv)
 
     trees = load(args.fw)
-    facts = parse_conf(args.conf)
+    facts = boot.facts(args.conf)
     bad = skipped = 0
     diverged = []
 

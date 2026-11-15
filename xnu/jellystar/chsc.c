@@ -16,12 +16,6 @@ static uint32_t le32(const uint8_t *p)
 	       (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
 }
 
-void chsc_address(uint32_t address, uint8_t command[4])
-{
-	for (unsigned i = 0; i < 4; i++)
-		command[i] = (uint8_t)(address >> (24 - i * 8));
-}
-
 int chsc_decode_startup(const uint8_t *data, size_t bytes, struct chsc_startup *out)
 {
 	if (bytes != CHSC_HEADER_BYTES) return 0;

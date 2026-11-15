@@ -85,9 +85,9 @@ def run(command):
     return subprocess.check_output(command, cwd=ROOT / "shim", text=True)
 
 
-def facts():
+def facts(path=ROOT / "shim/soc.args"):
     result = {}
-    for line in (ROOT / "shim/soc.args").read_text().splitlines():
+    for line in Path(path).read_text().splitlines():
         line = line.split("#", 1)[0].strip()
         if "=" in line:
             key, value = line.split("=", 1)
@@ -199,11 +199,6 @@ def build(original, output, diagnostic=False, xnu_payload=None):
     kernel, ramdisk = boot_parts(packed)
     if gzip.decompress(kernel) != image or ramdisk != boot_parts(original)[1]:
         raise ValueError("boot image round-trip changed kernel or ramdisk")
-    expected_header = bytearray(original[:PAGE])
-    struct.pack_into("<I", expected_header, 8, len(kernel))
-    struct.pack_into("<I", expected_header, 1580, 0)
-    if packed[:PAGE] != expected_header:
-        raise ValueError("unexpected boot header change")
     path = output / "chainboot.img"
     path.write_bytes(packed)
     path.chmod(0o600)

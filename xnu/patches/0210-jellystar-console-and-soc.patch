@@ -24,7 +24,8 @@
 +#define SWEET_EARLY_FB_BLOCK      (JELLY_FB_PA & ~0x1ffffff)
 +#define SWEET_PSTORE_PA           JELLY_PSTORE_PA
 +#define SWEET_PSTORE_SIZE         JELLY_PSTORE_SIZE
- #define SWEET_PSTORE_BLOCK        0x48000000
+-#define SWEET_PSTORE_BLOCK        0x48000000
++#define SWEET_PSTORE_BLOCK        (JELLY_PSTORE_PA & ~0x1ffffff)
  #define SWEET_IPI_SGI             1       // SGI used for cross-CPU signals
  
 --- a/osfmk/arm64/sweet_early.c

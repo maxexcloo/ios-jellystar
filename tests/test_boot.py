@@ -115,7 +115,7 @@ class LoaderTests(unittest.TestCase):
         lib = Path(cls.temp.name) / "shim.so"
         subprocess.run(
             [
-                "cc",
+                boot.tool("CC"),
                 "-DSHIM_HOST_TEST",
                 "-Wall",
                 "-Wextra",
