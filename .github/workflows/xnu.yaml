@@ -6,12 +6,18 @@ on:
     paths:
       - .github/workflows/xnu.yaml
       - shim/soc.args
+      - tests/test_payload.py
+      - tools/build-payload.py
+      - tools/build-shim.py
       - tools/prepare-kernel.py
       - xnu/**
   pull_request:
     paths:
       - .github/workflows/xnu.yaml
       - shim/soc.args
+      - tests/test_payload.py
+      - tools/build-payload.py
+      - tools/build-shim.py
       - tools/prepare-kernel.py
       - xnu/**
   workflow_dispatch:
