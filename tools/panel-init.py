@@ -179,8 +179,8 @@ def main():
     ap.add_argument("ko")
     ap.add_argument(
         "--symbol",
-        default=None,
-        help="init-sequence symbol prefix (default: guess from panel name)",
+        default="ST7701S_Z30043_init.d",
+        help="init-sequence symbol prefix",
     )
     ap.add_argument("--raw", action="store_true", help="also print raw payload bytes")
     a = ap.parse_args()
@@ -188,17 +188,8 @@ def main():
     data = Path(a.ko).read_bytes()
     secs = sections(data)
 
-    prefix = a.symbol
-    if not prefix:
-        for s in secs:
-            if s["name"] == ".rodata":
-                blob = data[s["off"] : s["off"] + s["size"]]
-                if b"zhunyi,st7701,vdo" in blob:
-                    prefix = "ST7701S_Z30043_init.d"
-        prefix = prefix or "ST7701S_Z30043_init.d"
-
-    seq = decode_sequence(data, secs, prefix)
-    print(f"== init sequence ({len(seq):d} objects, symbol prefix {prefix!r})")
+    seq = decode_sequence(data, secs, a.symbol)
+    print(f"== init sequence ({len(seq):d} objects, symbol prefix {a.symbol!r})")
     if not seq:
         print("  none found. Wrong module or a stripped build?")
         return 1
