@@ -27,14 +27,9 @@ mkdir -p "$OUT"
 echo "== dumping vendor_boot_$SLOT from the phone (64 MiB, read-only)"
 $ADB exec-out "cat /dev/block/by-name/vendor_boot_$SLOT" > "$OUT/vendor_boot.img"
 
-echo "== splitting the v4 header: ramdisk and DTB"
-python3 tools/unpack-vendor-boot.py "$OUT/vendor_boot.img" --out "$OUT"
-
+echo "== splitting the vendor ramdisk out of the header"
+python tools/unpack-vendor-boot.py "$OUT/vendor_boot.img" --out "$OUT"
 RD="$OUT/vendor_ramdisk.bin"
-if [ ! -f "$RD" ]; then
-	echo "no vendor_ramdisk.bin produced (header may be v3, or the slot is empty)" >&2
-	exit 1
-fi
 
 echo "== unpacking the LZ4-legacy cpio"
 rm -rf "$OUT/ramdisk"
@@ -58,5 +53,5 @@ for m in panel-ST7701S_Z30043.ko chsc5xxx_touch.ko mtk_panel_ext.ko; do
 done
 
 echo
-echo "next: python3 tools/panel-init.py $OUT/ramdisk/lib/modules/panel-ST7701S_Z30043.ko"
+echo "next: python tools/panel-init.py $OUT/ramdisk/lib/modules/panel-ST7701S_Z30043.ko"
 echo "      (decodes the DCS init sequence and the 480x854 timing table)"
