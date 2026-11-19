@@ -99,11 +99,3 @@ int chsc_apply_report(const struct chsc_report *report, struct chsc_state *state
 	}
 	return 1;
 }
-
-uint16_t chsc_active_mask(const struct chsc_state *state)
-{
-	uint16_t mask = 0;
-	for (unsigned i = 0; i < CHSC_SLOT_COUNT; i++)
-		if (state->slots[i].active) mask |= (uint16_t)(1u << i);
-	return mask;
-}

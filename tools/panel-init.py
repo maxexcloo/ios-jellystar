@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Decode the ST7701S panel driver out of the vendor .ko.
 
-  panel-init.py PANEL.ko [--symbol SYM] [--raw]
+  panel-init.py PANEL.ko [--symbol SYM]
 
 Prints, from the vendor module itself:
 
@@ -182,7 +182,6 @@ def main():
         default="ST7701S_Z30043_init.d",
         help="init-sequence symbol prefix",
     )
-    ap.add_argument("--raw", action="store_true", help="also print raw payload bytes")
     a = ap.parse_args()
 
     data = Path(a.ko).read_bytes()

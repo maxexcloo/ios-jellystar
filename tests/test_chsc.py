@@ -98,8 +98,6 @@ class ChscProtocolTests(unittest.TestCase):
             ctypes.POINTER(Report),
             ctypes.POINTER(State),
         ]
-        cls.lib.chsc_active_mask.argtypes = [ctypes.POINTER(State)]
-        cls.lib.chsc_active_mask.restype = ctypes.c_uint16
 
     @classmethod
     def tearDownClass(cls):
@@ -150,19 +148,23 @@ class ChscProtocolTests(unittest.TestCase):
 
     def test_protocol_b_state_retains_omissions_and_last_release_position(self):
         state = State()
+
+        def active_slots():
+            return [index for index, slot in enumerate(state.slots) if slot.active]
+
         self.lib.chsc_state_init(state)
-        self.assertEqual(self.lib.chsc_active_mask(state), 0)
+        self.assertEqual(active_slots(), [])
         report = self.decode(wire_report(1, [(14, 0, 479, 853, 7)]))
         self.assertEqual(self.lib.chsc_apply_report(report, state), 1)
-        self.assertEqual(self.lib.chsc_active_mask(state), 1 << 14)
+        self.assertEqual(active_slots(), [14])
         self.lib.chsc_apply_report(
             self.decode(wire_report(2, [(2, 2, 10, 20, 3)])), state
         )
-        self.assertEqual(self.lib.chsc_active_mask(state), (1 << 14) | (1 << 2))
+        self.assertEqual(active_slots(), [2, 14])
         self.lib.chsc_apply_report(
             self.decode(wire_report(1, [(14, 4, 0, 0, 0)])), state
         )
-        self.assertEqual(self.lib.chsc_active_mask(state), 1 << 2)
+        self.assertEqual(active_slots(), [2])
         self.assertEqual((state.slots[14].x, state.slots[14].y), (479, 853))
         before = bytes(state)
         for data in (
@@ -175,7 +177,7 @@ class ChscProtocolTests(unittest.TestCase):
         self.lib.chsc_apply_report(
             self.decode(wire_report(0, [(3, 0, 1, 2, 3)])), state
         )
-        self.assertEqual(self.lib.chsc_active_mask(state), 0)
+        self.assertEqual(active_slots(), [])
         self.assertEqual((state.slots[2].x, state.slots[2].y), (10, 20))
 
     def test_startup_header_byte_order(self):

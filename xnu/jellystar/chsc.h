@@ -53,7 +53,6 @@ int chsc_decode_report(const uint8_t *data, size_t bytes, struct chsc_report *ou
 void chsc_state_init(struct chsc_state *state);
 /* Apply decoded protocol-B events; omitted slots retain their previous state. */
 int chsc_apply_report(const struct chsc_report *report, struct chsc_state *state);
-uint16_t chsc_active_mask(const struct chsc_state *state);
 
 #ifdef __cplusplus
 }
