@@ -8,7 +8,6 @@ images are attached read-only; all writable mounts belong to the new output.
 import argparse
 import os
 import plistlib
-import stat
 import subprocess
 import sys
 import tempfile
@@ -150,11 +149,12 @@ def main():
     run("git", "-C", source, "diff", "--exit-code", "HEAD", "--", "tools")
     args.out = args.out.resolve()
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    with args.out.open("xb") as image:
-        args.out.chmod(0o600)
-        image.truncate(args.gib * 1024**3)
+    if args.out.exists():
+        parser.error(f"Output already exists: {args.out}")
     devices = []
     work = Path(tempfile.mkdtemp(prefix="root-build-", dir=args.out.parent))
+    staged = work / "iosroot.img"
+    verified = False
 
     def attach(path, name, readonly=False, nomount=False):
         flags = (
@@ -184,9 +184,12 @@ def main():
         return device
 
     try:
+        with staged.open("xb") as image:
+            staged.chmod(0o600)
+            image.truncate(args.gib * 1024**3)
         for name, path in zip(("OS", "SystemOS", "AppOS"), images, strict=True):
             attach(path, name, readonly=True)
-        device = attach(args.out, "root", nomount=True)
+        device = attach(staged, "root", nomount=True)
         run("newfs_hfs", "-s", "-J", "-v", "JellyStarRoot", device)
         mount = work / "root"
         mount.mkdir()
@@ -216,6 +219,7 @@ def main():
         finish_root(mount, source)
         run("diskutil", "unmount", device)
         run("diskutil", "verifyVolume", device)
+        verified = True
     finally:
         failed = []
         for device in reversed(devices):
@@ -229,16 +233,22 @@ def main():
                 directory.rmdir()
             except OSError:
                 pass
-        try:
-            work.rmdir()
-        except OSError:
-            pass
         if failed:
             raise RuntimeError(f"Host image mounts remain attached under {work}")
-    # The image may have been built under sudo; let the calling user retain it.
-    if "SUDO_UID" in os.environ:
-        os.chown(args.out, int(os.environ["SUDO_UID"]), int(os.environ["SUDO_GID"]))
-    args.out.chmod(stat.S_IRUSR | stat.S_IWUSR)
+        try:
+            if verified:
+                if "SUDO_UID" in os.environ:
+                    os.chown(
+                        staged, int(os.environ["SUDO_UID"]), int(os.environ["SUDO_GID"])
+                    )
+                # Publish atomically without replacing another build's output.
+                os.link(staged, args.out)
+        finally:
+            staged.unlink(missing_ok=True)
+            try:
+                work.rmdir()
+            except OSError:
+                pass
     print(
         f"Verified standalone HFS+ root: {args.out}; no Jelly Star partition selected"
     )
