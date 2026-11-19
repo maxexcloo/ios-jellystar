@@ -75,4 +75,4 @@ cap mounts 'mount | grep -iE "userdata|super|metadata"'
 
 echo
 echo "done. Review $OUT/ before committing anything: the live DT has the serial."
-echo "next: mise exec -- python tools/check-facts.py   (then fill any PHONE/MISSING rows in shim/soc.args)"
+echo "next: mise exec -- python tools/check-facts.py"

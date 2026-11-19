@@ -24,6 +24,7 @@ import fdt
 
 boot = importlib.import_module("build-shim")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+FRAMEBUFFER = "/reserved-memory/mblock-13-framebuffer"
 
 # key -> (tree, node, property, kind, index)
 #   kind "reg64": 64-bit (address, size) pairs; index picks a pair.
@@ -36,9 +37,8 @@ RULES = {
     "soc_gicr": ("dtb", "/interrupt-controller", "reg", "reg64", 2),
     "soc_gicr_size": ("dtb", "/interrupt-controller", "reg", "reg64", 3),
     "soc_timebase": ("dtb", "/timer", "clock-frequency", "u32", 0),
-    # The DT spells the virtual timer as a PPI (type 1, number 11); XNU wants
-    # the INTID, 16 + 11. "intid" does that conversion so the plan can state 27.
-    "soc_vtimer_intid": ("dtb", "/timer", "interrupts", "intid", 11),
+    # The virtual timer follows the two EL1 physical timers.
+    "soc_vtimer_intid": ("dtb", "/timer", "interrupts", "intid", 2),
     "soc_ufs": ("dtb", "/soc/ufshci@11270000", "reg", "reg64", 0),
     "soc_ufs_size": ("dtb", "/soc/ufshci@11270000", "reg", "reg64", 1),
     "soc_ufs_spi": ("dtb", "/soc/ufshci@11270000", "interrupts", "u32", 1),
@@ -55,18 +55,9 @@ RULES = {
     "soc_dsi0": ("dtb", "/soc/dsi@14013000", "reg", "reg64", 0),
     "soc_dsi0_spi": ("dtb", "/soc/dsi@14013000", "interrupts", "u32", 1),
     "soc_disp_mutex0": ("dtb", "/soc/disp_mutex@14001000", "reg", "reg64", 0),
-    "soc_fb": ("dtb", "/chosen", "atag,videolfb-fb_base_l", "u32", 0),
-    "soc_fb_vramsize": ("dtb", "/chosen", "atag,videolfb-vramSize", "u32", 0),
-    # LK adds these reserved-memory nodes to the DT it passes; the packaged DTB
-    # from the release image has none of them. Checked against recon/live.dtb
-    # (the phone's own /sys/firmware/fdt) when that exists -- see load().
-    "soc_fb_reserved": (
-        "live",
-        "/reserved-memory/mblock-13-framebuffer",
-        "reg",
-        "reg64",
-        1,
-    ),
+    "soc_fb": ("live", FRAMEBUFFER, "reg", "reg64", 0),
+    "soc_fb_reserved": ("live", FRAMEBUFFER, "reg", "reg64", 1),
+    "soc_fb_vramsize": ("live", "/chosen", "atag,videolfb-vramSize", "u32", 0),
     "soc_pstore": ("live", "/reserved-memory/mblock-10-pstore", "reg", "reg64", 0),
     "soc_pstore_size": ("live", "/reserved-memory/mblock-10-pstore", "reg", "reg64", 1),
     "soc_aee_kinfo": (
@@ -204,16 +195,6 @@ NOT_IN_DT = {
     "part_expdb_bytes": "blockdev --getsize64: 128 MiB (LK log ring)",
 }
 
-# Facts whose value was read off the *running phone* and which the packaged DTB
-# in the release/firmware image contradicts. These are reported, not corrected:
-# seeing the divergence is the point. A new entry here needs a reason and a date.
-KNOWN_DIVERGENCE = {
-    "soc_fb": "phone 2026-11-06: /chosen says 0xffb0c000; the packaged DTB says 0x7e605000. LK passes its "
-    "own DTB at boot, so the packaged one is not authoritative.",
-    "soc_fb_vramsize": "phone 2026-11-06: /chosen says 0x4c0000; the packaged DTB says 0x1be0000 (sized for a "
-    "1080x2400 panel). The phone has 480x854.",
-}
-
 
 def load(fw):
     paths = {
@@ -261,11 +242,11 @@ def got_for(value, kind, index):
     if kind == "spis":
         return [cells[i + 1] for i in range(0, len(cells) - 3, 4) if cells[i] == 0]
     if kind == "intid":
-        # <type num flags> groups; a PPI (type 1) becomes INTID 16 + num.
-        return [
-            16 + cells[i + 1] if cells[i] == 1 else cells[i + 1]
-            for i in range(0, len(cells) - 3, 4)
-        ]
+        # A PPI (type 1) becomes INTID 16 + num.
+        start = 4 * index
+        if start + 4 > len(cells):
+            raise IndexError(index)
+        return [16 + cells[start + 1]] if cells[start] == 1 else []
     return cells if index is None else [cells[index]]
 
 
@@ -325,7 +306,6 @@ def main(argv):
     trees = load(args.fw)
     facts = boot.facts(args.conf)
     bad = skipped = 0
-    diverged = []
 
     for key in sorted(facts):
         expected = facts[key]
@@ -377,20 +357,7 @@ def main(argv):
             bad += 1
             continue
         want = want_list(expected)
-        if kind == "intid":
-            # The timer has four PPIs <13 14 11 10>; keep only the one asked for.
-            got = [x for x in got if x in want]
-        if got != want and key in KNOWN_DIVERGENCE:
-            print(
-                "{!s:<22} PHONE   conf={!s} dt={!s}  ({!s})".format(
-                    key,
-                    ",".join(hex(x) for x in want),
-                    ",".join(hex(x) for x in got),
-                    KNOWN_DIVERGENCE[key],
-                )
-            )
-            diverged.append(key)
-        elif got != want:
+        if got != want:
             print(
                 "{!s:<22} MISMATCH dt={!s} conf={!s}".format(
                     key, ",".join(hex(x) for x in got), ",".join(hex(x) for x in want)
@@ -431,9 +398,7 @@ def main(argv):
     if bad:
         print(f"{bad:d} fact(s) disagree with the device tree, {skipped:d} skipped")
         return 1
-    print(
-        f"all checkable facts match the device tree ({skipped:d} skipped: not in the DT)"
-    )
+    print(f"all checkable facts match the device tree ({skipped:d} skipped)")
     return 0
 
 
