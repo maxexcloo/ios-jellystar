@@ -41,7 +41,7 @@ jobs:
       - name: Set Up Shared Tools & Tasks
         uses: maxexcloo/dotfiles/.github/actions/mise@main
         with:
-          tools: python@latest
+          project-tools: true
       - name: Set Up Xcode 16
         run: |
           test -d /Applications/Xcode_16.app
