@@ -39,7 +39,7 @@ if ! lz4 -l -d -f "$RD" "$OUT/vendor_ramdisk.cpio" 2>/dev/null; then
 	od -An -tx1 -N8 "$RD" >&2
 	exit 1
 fi
-(cd "$OUT/ramdisk" && cpio -idm --quiet < "../vendor_ramdisk.cpio" 2>/dev/null || true)
+(cd "$OUT/ramdisk" && cpio -idm --quiet < "../vendor_ramdisk.cpio")
 
 echo
 echo "== the modules the plan is blocked on"
