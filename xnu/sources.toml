@@ -1,7 +1,7 @@
 [helio]
 url = "https://github.com/squeeeezy/HelioDarwin"
 # renovate: datasource=git-refs depName=https://github.com/squeeeezy/HelioDarwin
-commit = "e04035ebe905a7d41926ee4582a601cb114f8bc4"
+commit = "856f3fbc4daf094fa1436697d81c38d352e5cb8b"
 
 [dxb]
 url = "https://github.com/blacktop/darwin-xnu-build"
