@@ -201,10 +201,8 @@ def load(fw):
         "dtb": os.path.join(fw, "jellystar.dtb"),
         "dtbo": os.path.join(fw, "dtbo.img"),
     }
-    # The live DT is optional: it only exists if someone ran recon with root
-    # (`adb exec-out 'cat /sys/firmware/fdt' > recon/live.dtb`). Without it the
-    # "live" rows report SKIP rather than passing, so a missing recon is never
-    # mistaken for a verified fact.
+    # The live DT captured by tools/recon.sh is optional. Without it the live
+    # rows report SKIP.
     live = os.path.join(ROOT, "recon", "live.dtb")
     if os.path.exists(live):
         paths["live"] = live

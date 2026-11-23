@@ -23,7 +23,11 @@ ADB="adb"
 mkdir -p "$OUT"
 
 sh_() { $ADB shell "$1" 2>&1 | tr -d '\r'; }
-cap() { sh_ "$2" > "$OUT/$1.txt"; echo "  $OUT/$1.txt"; }
+cap() {
+	data=$($ADB shell "$2")
+	printf '%s' "$data" | awk -v pattern="${3:-}" '{ gsub(/\r/, ""); if (tolower($0) ~ pattern) print }' > "$OUT/$1.txt"
+	echo "  $OUT/$1.txt"
+}
 
 echo "== identity"
 UID_=$($ADB shell id 2>/dev/null | tr -d '\r')
@@ -44,13 +48,13 @@ echo "  /chosen lcmname: $(sh_ 'cat /proc/device-tree/chosen/atag,videolfb-lcmna
 echo "  DRM mode:        $(sh_ 'cat /sys/class/drm/card0-DSI-1/modes 2>/dev/null' | tr '\n' ' ')"
 echo "  wm size/density: $(sh_ 'wm size' | tr -d '\n') / $(sh_ 'wm density' | tr -d '\n')"
 echo "  panel modules:"; sh_ 'lsmod | grep -iE "^panel_|panel-" | sed "s/^/    /"'
-cap panel-lsmod 'lsmod | grep -iE "panel|mtk_panel_ext"'
+cap panel-lsmod lsmod 'panel|mtk_panel_ext'
 
 echo
 echo "== touch"
 echo "  0-002e name: $(sh_ 'cat /sys/bus/i2c/devices/0-002e/name 2>/dev/null')"
 cap input-devices 'cat /proc/bus/input/devices'
-cap touch-lsmod 'lsmod | grep -iE "chsc|touch"'
+cap touch-lsmod lsmod 'chsc|touch'
 
 echo
 echo "== memory"
@@ -71,8 +75,13 @@ sh_ 'for c in /sys/devices/system/cpu/cpu[0-9]; do printf "%-5s core_id=%s capac
 echo
 echo "== storage (partition table, read-only)"
 cap partitions 'ls -l /dev/block/by-name/ 2>/dev/null'
-cap mounts 'mount | grep -iE "userdata|super|metadata"'
+cap mounts mount 'userdata|super|metadata'
+
+live=$(mktemp "$OUT/.live.dtb.XXXXXX")
+trap 'rm -f "$live"' EXIT
+$ADB shell -T 'cat /sys/firmware/fdt' > "$live"
+mv "$live" "$OUT/live.dtb"
 
 echo
 echo "done. Review $OUT/ before committing anything: the live DT has the serial."
-echo "next: mise exec -- python tools/check-facts.py"
+[ "$OUT" != recon ] || echo "next: mise exec -- python tools/check-facts.py"
