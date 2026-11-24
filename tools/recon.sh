@@ -22,15 +22,18 @@ ADB="adb"
 
 mkdir -p "$OUT"
 
-sh_() { $ADB shell "$1" 2>&1 | tr -d '\r'; }
+read_text() {
+	data=$($ADB shell "$1") || return
+	printf '%s\n' "$data" | tr -d '\r'
+}
 cap() {
-	data=$($ADB shell "$2")
-	printf '%s' "$data" | awk -v pattern="${3:-}" '{ gsub(/\r/, ""); if (tolower($0) ~ pattern) print }' > "$OUT/$1.txt"
+	data=$(read_text "$2")
+	printf '%s' "$data" | awk -v pattern="${3:-}" 'tolower($0) ~ pattern' > "$OUT/$1.txt"
 	echo "  $OUT/$1.txt"
 }
 
 echo "== identity"
-UID_=$($ADB shell id 2>/dev/null | tr -d '\r')
+UID_=$(read_text id)
 case "$UID_" in
 *uid=0*) echo "  root ok" ;;
 *) echo "  NOT root: run 'adb root' first (/proc/device-tree needs it)"; exit 1 ;;
@@ -39,27 +42,36 @@ esac
 for p in ro.board.platform ro.product.device ro.product.model ro.build.version.release \
          ro.build.fingerprint ro.boot.hardware ro.boot.slot_suffix \
          ro.boot.verifiedbootstate ro.boot.flash.locked; do
-	printf '%-28s %s\n' "$p" "$($ADB shell getprop $p 2>/dev/null | tr -d '\r')"
+	value=$(read_text "getprop $p")
+	printf '%-28s %s\n' "$p" "$value"
 done
 
 echo
 echo "== panel (bound driver beats /chosen's name)"
-echo "  /chosen lcmname: $(sh_ 'cat /proc/device-tree/chosen/atag,videolfb-lcmname' | tr -d '\0')"
-echo "  DRM mode:        $(sh_ 'cat /sys/class/drm/card0-DSI-1/modes 2>/dev/null' | tr '\n' ' ')"
-echo "  wm size/density: $(sh_ 'wm size' | tr -d '\n') / $(sh_ 'wm density' | tr -d '\n')"
-echo "  panel modules:"; sh_ 'lsmod | grep -iE "^panel_|panel-" | sed "s/^/    /"'
+lcm=$(read_text 'test ! -r /proc/device-tree/chosen/atag,videolfb-lcmname || tr -d "\000" < /proc/device-tree/chosen/atag,videolfb-lcmname')
+modes=$(read_text 'test ! -r /sys/class/drm/card0-DSI-1/modes || cat /sys/class/drm/card0-DSI-1/modes')
+size=$(read_text 'wm size')
+density=$(read_text 'wm density')
+echo "  /chosen lcmname: $lcm"
+echo "  DRM mode:        $(printf '%s' "$modes" | tr '\n' ' ')"
+echo "  wm size/density: $(printf '%s' "$size" | tr -d '\n') / $(printf '%s' "$density" | tr -d '\n')"
+echo "  panel modules:"
 cap panel-lsmod lsmod 'panel|mtk_panel_ext'
+sed 's/^/    /' "$OUT/panel-lsmod.txt"
 
 echo
 echo "== touch"
-echo "  0-002e name: $(sh_ 'cat /sys/bus/i2c/devices/0-002e/name 2>/dev/null')"
+touch=$(read_text 'test ! -r /sys/bus/i2c/devices/0-002e/name || cat /sys/bus/i2c/devices/0-002e/name')
+echo "  0-002e name: $touch"
 cap input-devices 'cat /proc/bus/input/devices'
 cap touch-lsmod lsmod 'chsc|touch'
 
 echo
 echo "== memory"
-echo "  /memory/reg: $(sh_ 'od -An -tx1 -v /proc/device-tree/memory/reg' | tr -d ' \n')"
-echo "  MemTotal:    $(sh_ 'grep MemTotal /proc/meminfo' | tr -s ' ')"
+memory=$(read_text 'od -An -tx1 -v /proc/device-tree/memory/reg')
+total=$(read_text 'grep MemTotal /proc/meminfo')
+echo "  /memory/reg: $(printf '%s' "$memory" | tr -d ' \n')"
+echo "  MemTotal:    $(printf '%s' "$total" | tr -s ' ')"
 # These single-quoted programs run on the phone, not in the host shell.
 # shellcheck disable=SC2016
 cap reserved-memory 'for d in /proc/device-tree/reserved-memory/*/; do printf "%-40s " "$(basename "$d")"; od -An -tx1 -v "$d/reg" 2>/dev/null | tr -d "\n "; echo; done'
@@ -69,8 +81,8 @@ cap chosen 'for f in /proc/device-tree/chosen/*; do printf "%-32s " "$(basename 
 echo
 echo "== cpus"
 # shellcheck disable=SC2016
-sh_ 'for c in /sys/devices/system/cpu/cpu[0-9]; do printf "%-5s core_id=%s capacity=%s\n" $(basename $c) $(cat $c/topology/core_id) $(cat $c/cpu_capacity); done' |
-	sed 's/^/  /'
+cpus=$(read_text 'for c in /sys/devices/system/cpu/cpu[0-9]; do printf "%-5s core_id=%s capacity=%s\n" $(basename $c) $(cat $c/topology/core_id) $(cat $c/cpu_capacity); done')
+printf '%s\n' "$cpus" | sed 's/^/  /'
 
 echo
 echo "== storage (partition table, read-only)"
